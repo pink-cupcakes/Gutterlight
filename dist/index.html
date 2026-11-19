@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#101813"><meta name="description" content="Explore seven interconnected undercity neighborhoods. Follow winding streets, discover shortcuts, and find a little life among the pipes."><title>Mosslight · The Lower Undercity</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<canvas id="world" aria-label="The Foundry Lanes. Use WASD or arrow keys to move, E to interact, or click a destination." tabindex="0"></canvas>
+<div class="vignette"></div>
+<header class="topbar">
+<a class="brand" href="#" aria-label="About Mosslight"><span class="brand-mark">✳</span><span>MOSS<span class="light">LIGHT</span><small>A LITTLE LIFE IN A BIG WORLD</small></span></a>
+<div class="mode-switch" aria-label="Play mode"><button id="explore" class="selected">Explore</button><button id="watch"><span class="eye">◉</span> Watch Iona</button></div>
+<div class="top-actions"><button id="sound" class="icon-button" aria-label="Enable ambient sound" title="Ambient sound">♫</button><button id="journal" class="journal-button"><span>▤</span> Journal <span id="journal-count">1</span></button><button id="help" class="icon-button" aria-label="Help and settings">?</button></div>
+</header>
+<section class="location"><div class="eyebrow" id="location-kicker">THE LOWER DISTRICT</div><h1 id="location-name">The Foundry Lanes</h1><p><span class="weather-icon">☁</span> Undercity haze <span class="separator">·</span> <span id="clock">18:42</span></p></section>
+<section class="quest glass" aria-label="Iona’s current attention"><div class="eyebrow"><span class="diamond">◇</span> IONA’S ATTENTION</div><h2 id="quest-title">A heart out of rhythm</h2><p id="quest-text">The old pump is making a sound Iona hasn’t heard before.</p><button id="quest-track"><span id="quest-step">Her notebook</span><span class="key">J</span></button></section>
+<aside class="observer glass" id="observer"><div class="observer-heading"><div class="eyebrow"><span class="live-dot"></span> THE OBSERVER</div><button id="observer-toggle" aria-label="Collapse observer">−</button></div><div id="observer-content"><p class="observer-intro">Every small thing leaves a trace.</p><div id="latest-event"></div><div class="observer-foot"><span>FIELD NOTES</span><button id="all-events">View history</button></div></div></aside>
+<button id="zone-link" class="glass">⌄ &nbsp; Southern stairs <span>Continue to Sump Crossing</span></button><button id="minimap-panel" class="glass" hidden aria-label="Open undercity map"><span class="eyebrow">THE LOWER UNDERCITY</span><canvas id="minimap" width="248" height="200"></canvas><span>Known streets · M for map</span></button>
+<nav id="route-list" class="glass" aria-label="Connecting streets"></nav>
+<div id="speech" class="speech" hidden></div>
+<div id="interact-prompt" hidden><button id="interact"><span class="key">E</span><span id="interact-label">Inspect</span></button></div>
+<div id="toast" role="status" hidden></div>
+<footer class="bottom-bar"><div class="resident glass"><div class="portrait"></div><div><div class="resident-name">Iona <span id="mood">Curious</span></div><div class="resident-state" id="resident-state">Finding her own way</div><div class="resolve"><i id="resolve-fill"></i></div></div></div><div class="inventory"><button class="slot" id="gear-slot" aria-label="Inventory: brass gear" title="Brass gear"><span class="item gear"></span><small id="gear-count">0</small></button><button class="slot" id="gift" aria-label="Leave a gift for Iona" title="Leave a moss cutting"><span class="item moss"></span><small>G</small></button><button class="slot" id="bag" aria-label="Open inventory" title="Satchel"><span class="item bag"></span><small>B</small></button><button class="slot" id="map" aria-label="Open district map" title="District map"><span class="map-symbol">⌘</span><small>M</small></button></div><div class="controls-hint"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</span><span><kbd>E</kbd> interact</span><small>or click to walk</small></div></footer>
+<div class="save-status" id="save-status">Local world · progress saved on this device</div>
+<div id="loading"><span class="brand-mark">✳</span><h2>Lighting the lanes</h2><p>A little world is waking up.</p></div>
+<dialog id="dialog"><button id="close-dialog" class="close" aria-label="Close dialog">×</button><div id="dialog-content"></div></dialog>
+<script type="module" src="game.js"></script>
+</body></html>
