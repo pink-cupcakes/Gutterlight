@@ -90,52 +90,52 @@ export function freshMind() {
   };
 }
 export const objectKey = (zone, id) => zone + ':' + id;
-export function note(s, text, kind = 'observation') {
-  if (s.mind.notes.some((n) => n.text === text)) return;
-  s.mind.notes.push({ text, kind, time: s.elapsed });
-  if (s.mind.notes.length > 100) s.mind.notes.shift();
+export function note(state, text, kind = 'observation') {
+  if (state.mind.notes.some((n) => n.text === text)) return;
+  state.mind.notes.push({ text, kind, time: state.elapsed });
+  if (state.mind.notes.length > 100) state.mind.notes.shift();
 }
-export function skill(s, name, evidence) {
-  if (s.life.skills.includes(name)) return;
-  s.life.skills.push(name);
-  note(s, evidence, 'skill');
+export function skill(state, name, evidence) {
+  if (state.life.skills.includes(name)) return;
+  state.life.skills.push(name);
+  note(state, evidence, 'skill');
 }
-export function integrateOutcome(s, e) {
+export function integrateOutcome(state, e) {
   if (!e) return;
-  if (e.type === 'inspect' || s.stage >= 1)
+  if (e.type === 'inspect' || state.stage >= 1)
     skill(
-      s,
+      state,
       'Mechanics',
       'A missing tooth interrupts a repeating motion. I can follow a mechanism from one part to the next.',
     );
-  if (s.city.talked.includes('crossing'))
+  if (state.city.talked.includes('crossing'))
     skill(
-      s,
+      state,
       'Listening',
       'Orin distinguishes the sound of a loaded pipe from an empty one. I tried listening for it.',
     );
-  if (s.city.recovered && s.life.skills.includes('Listening')) {
+  if (state.city.recovered && state.life.skills.includes('Listening')) {
     skill(
-      s,
+      state,
       'Resonance',
       'The recovered coil vibrates like the pipes. Listening and recognizing its structure might let me tune it.',
     );
   }
-  if (e.type === 'talk' && s.zone === 'violet')
-    note(s, 'Ves strips the cloth from old wire and winds the copper back into place.');
+  if (e.type === 'talk' && state.zone === 'violet')
+    note(state, 'Ves strips the cloth from old wire and winds the copper back into place.');
 }
-export function perceive(s, points) {
-  s.mind.routes[s.zone] = Object.fromEntries(
+export function perceive(state, points) {
+  state.mind.routes[state.zone] = Object.fromEntries(
     Object.values(points)
       .filter((p) => p.exit)
       .map((p) => [p.dir, p.to]),
   );
   for (const [id, p] of Object.entries(points)) {
     if (p.exit) continue;
-    const key = objectKey(s.zone, id);
-    if (!s.mind.known[key])
-      s.mind.known[key] = {
-        zone: s.zone,
+    const key = objectKey(state.zone, id);
+    if (!state.mind.known[key])
+      state.mind.known[key] = {
+        zone: state.zone,
         id,
         name: p.name,
         x: p.x,
@@ -147,19 +147,20 @@ export function perceive(s, points) {
 export function pressure(intake, vent) {
   return 20 + 10 * intake - 7 * vent;
 }
-export function studied(s, zone, id) {
-  return s.mind.studied.includes(objectKey(zone, id));
+export function studied(state, zone, id) {
+  return state.mind.studied.includes(objectKey(zone, id));
 }
-export function lifeAction(s, type, payload, points) {
-  const point = (id) => points[id] && Math.hypot(s.x - points[id].x, s.y - points[id].y) < 90;
-  const l = s.life;
+export function lifeAction(state, type, payload, points) {
+  const point = (id) =>
+    points[id] && Math.hypot(state.x - points[id].x, state.y - points[id].y) < 90;
+  const l = state.life;
   let text = '',
     memory = '';
   if (type === 'study' && point(payload.id)) {
     const id = payload.id,
-      key = objectKey(s.zone, id);
-    if (s.mind.studied.includes(key)) return null;
-    s.mind.studied.push(key);
+      key = objectKey(state.zone, id);
+    if (state.mind.studied.includes(key)) return null;
+    state.mind.studied.push(key);
     const p = points[id];
     const details = {
       pump: 'There is a gap in the gear. The knock comes around with it.',
@@ -176,37 +177,37 @@ export function lifeAction(s, type, payload, points) {
       cache: 'The copper coil rings faintly when touched.',
       latch: 'The bolt can be lifted from this side.',
       npc:
-        s.zone === 'lantern'
+        state.zone === 'lantern'
           ? 'Mara is turning a small wrapped fuse over in her hands.'
-          : s.zone === 'cable'
+          : state.zone === 'cable'
             ? 'Edda keeps checking a dark lamp and an empty fuse holder.'
             : 'They seem to know the sounds and habits of this street.',
     };
     memory = details[id] || 'There are signs of work here, unfinished rather than abandoned.';
     text = `Iona examined ${p.name.toLowerCase()}.`;
-    if (s.mind.known[key]) s.mind.known[key].observation = memory;
-    note(s, memory);
+    if (state.mind.known[key]) state.mind.known[key].observation = memory;
+    note(state, memory);
     if (id === 'scrap')
       skill(
-        s,
+        state,
         'Salvaging',
         'The shape is ruined, but the material still has uses. I can separate them.',
       );
   } else if (
     type === 'rummage' &&
     point('scrap') &&
-    studied(s, s.zone, 'scrap') &&
-    !l.looted.includes(s.zone)
+    studied(state, state.zone, 'scrap') &&
+    !l.looted.includes(state.zone)
   ) {
-    l.looted.push(s.zone);
+    l.looted.push(state.zone);
     l.scrap += 2;
     text = 'Iona recovered two lengths of workable copper from the discarded fittings.';
     memory = 'Not rubbish. Just the wrong shape for its last job.';
   } else if (
     type === 'wind-wire' &&
-    s.zone === 'district' &&
+    state.zone === 'district' &&
     point('benchwork') &&
-    studied(s, 'district', 'benchwork') &&
+    studied(state, 'district', 'benchwork') &&
     l.scrap >= 2 &&
     l.skills.includes('Mechanics') &&
     l.skills.includes('Salvaging')
@@ -214,7 +215,7 @@ export function lifeAction(s, type, payload, points) {
     l.scrap -= 2;
     l.wire += 2;
     skill(
-      s,
+      state,
       'Wiring',
       'Salvaging found the copper. Mechanics showed how to draw and wind it into a conductor.',
     );
@@ -222,7 +223,7 @@ export function lifeAction(s, type, payload, points) {
     memory = 'Two things I knew separately turned into something I could use.';
   } else if (
     type === 'light-lamp' &&
-    s.zone === 'lantern' &&
+    state.zone === 'lantern' &&
     point('lamp') &&
     l.wire >= 1 &&
     l.skills.includes('Wiring') &&
@@ -232,14 +233,14 @@ export function lifeAction(s, type, payload, points) {
     l.lamp = true;
     text = 'Iona bridged the broken conductor. The street lamp flickered, then held its light.';
     memory = 'There. A little less darkness for whoever comes through next.';
-  } else if (type === 'accept-parcel' && s.zone === 'lantern' && point('npc') && !l.promised) {
+  } else if (type === 'accept-parcel' && state.zone === 'lantern' && point('npc') && !l.promised) {
     l.promised = true;
     l.parcel = true;
     text = 'Iona accepted Mara’s wrapped fuse, meant for Edda.';
     memory = 'I said I’d keep an eye out for her. Now it matters that I do.';
   } else if (
     type === 'deliver-parcel' &&
-    s.zone === 'cable' &&
+    state.zone === 'cable' &&
     point('npc') &&
     l.parcel &&
     !l.delivered
@@ -252,10 +253,10 @@ export function lifeAction(s, type, payload, points) {
     memory = 'The thing in my pocket was the thing missing from someone else’s evening.';
   } else if (
     type === 'probe' &&
-    s.zone === 'boiler' &&
+    state.zone === 'boiler' &&
     point('regulator') &&
     !l.stable &&
-    studied(s, 'boiler', 'regulator') &&
+    studied(state, 'boiler', 'regulator') &&
     Number.isInteger(payload.intake) &&
     Number.isInteger(payload.vent) &&
     payload.intake >= 0 &&
@@ -271,10 +272,10 @@ export function lifeAction(s, type, payload, points) {
     text = `Iona tried the regulator at ${l.intake} / ${l.vent}. The gauge settled at ${l.pressure}.`;
     memory =
       l.trials.length === 1 ? 'That changed the sound. I should change one wheel at a time.' : '';
-    note(s, `Regulator ${l.intake} / ${l.vent}: gauge ${l.pressure}.`, 'experiment');
+    note(state, `Regulator ${l.intake} / ${l.vent}: gauge ${l.pressure}.`, 'experiment');
   } else if (
     type === 'settle-pressure' &&
-    s.zone === 'boiler' &&
+    state.zone === 'boiler' &&
     point('regulator') &&
     !l.stable &&
     l.pressure >= 55 &&
@@ -289,12 +290,12 @@ export function lifeAction(s, type, payload, points) {
     memory = 'The needle was close. The sound told me when it was right.';
   } else if (
     type === 'restore-beacon' &&
-    s.zone === 'cable' &&
+    state.zone === 'cable' &&
     point('beacon') &&
-    studied(s, 'cable', 'beacon') &&
+    studied(state, 'cable', 'beacon') &&
     !l.beacon &&
     l.stable &&
-    s.city.recovered &&
+    state.city.recovered &&
     !l.coilUsed &&
     l.wire >= 1 &&
     ['Mechanics', 'Wiring', 'Resonance'].every((k) => l.skills.includes(k))
@@ -302,22 +303,22 @@ export function lifeAction(s, type, payload, points) {
     l.wire--;
     l.coilUsed = true;
     l.beacon = true;
-    l.signalAt = s.elapsed;
+    l.signalAt = state.elapsed;
     text =
       'Iona joined the recovered coil to the mast, wired it, and tuned it to the pressure line. A green signal swept across the hanging streets.';
     memory = 'It wasn’t one answer. It was several small things that finally belonged together.';
   } else return null;
-  s.mood = type === 'probe' ? 'Testing' : type === 'study' ? 'Curious' : 'Absorbed';
-  const e = appendEvent(s, type, text, memory);
-  integrateOutcome(s, e);
+  state.mood = type === 'probe' ? 'Testing' : type === 'study' ? 'Curious' : 'Absorbed';
+  const e = appendEvent(state, type, text, memory);
+  integrateOutcome(state, e);
   return e;
 }
-export function practicalOptions(s, id) {
-  const l = s.life,
+export function practicalOptions(state, id) {
+  const l = state.life,
     options = [];
-  if (!studied(s, s.zone, id))
+  if (!studied(state, state.zone, id))
     return [{ label: 'Look more closely', type: 'study', payload: { id } }];
-  if (id === 'scrap' && !l.looted.includes(s.zone))
+  if (id === 'scrap' && !l.looted.includes(state.zone))
     options.push({ label: 'Separate the usable copper', type: 'rummage' });
   if (id === 'benchwork') options.push({ label: 'Try drawing a conductor', type: 'wind-wire' });
   if (id === 'lamp' && !l.lamp)
@@ -326,15 +327,15 @@ export function practicalOptions(s, id) {
     options.push({ label: 'Try the coil in the cradle', type: 'restore-beacon' });
   return options;
 }
-export function unmet(s, type) {
-  const l = s.life;
+export function unmet(state, type) {
+  const l = state.life;
   if (type === 'wind-wire') {
     if (l.scrap < 2) return 'There is not enough workable copper here.';
     return 'I need to understand both the material and the mechanism.';
   }
   if (type === 'light-lamp') return 'I need a conductor I can work with.';
   if (type === 'restore-beacon') {
-    if (!s.city.recovered || l.coilUsed)
+    if (!state.city.recovered || l.coilUsed)
       return 'The empty cradle needs something that can resonate.';
     if (!l.stable) return 'The pressure line is still coughing. This will not hold a steady note.';
     if (!l.wire) return 'The terminals are bare. The circuit is still open.';

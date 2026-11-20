@@ -26,7 +26,10 @@ Serve `dist/` through HTTP; there is no build step or runtime dependency. `npm t
 
 - `city.js`: neighborhood graph, scene-specific exit coordinates and walkable polygons traced against the paintings, navigation, reciprocal travel, safe arrival positions, shortcut guards and exploration goals.
 - `world-model.js`: state, guarded actions, inventory, memories and committed history. Earlier maze saves migrate into Sump Crossing; story progression and recovered rewards are retained.
-- `game.js`: canvas scene renderer, feet-anchored sprite animation, resident depth ordering, keyboard and point-to-point movement, dialogue, audio, local persistence and autonomous behavior. Movement clamps each step to its next waypoint to avoid overshooting a narrow street boundary.
+- `game.js`: startup, input, point-to-point movement, persistence, and the autonomous update loop. Movement clamps each step to its next waypoint to avoid overshooting a narrow street boundary.
+- `renderer.js`: canvas drawing, feet-anchored sprite animation, and resident depth ordering from a frame snapshot.
+- `audio.js`: ambient sound, action tones, and arrangement playback.
+- `ui/dialogs.js`: modal interaction controls; `ui/notebook.js`: pure notebook section renderers; `ui/html.js`: formatted markup and text escaping.
 - `city-map.js`: read-only map of visited neighborhoods and adjoining passages. The bolted connection is drawn as a dashed line until opened.
 
 The streets themselves supply the maze structure. The former generated rectangular labyrinth, tile renderer and three-valve puzzle were removed.

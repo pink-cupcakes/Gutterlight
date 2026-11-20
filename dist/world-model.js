@@ -55,16 +55,16 @@ export function walkable(x, y) {
   }
   return c;
 }
-export function canWalk(s, x, y) {
-  return sceneWalkable(s.zone, x, y);
+export function canWalk(state, x, y) {
+  return sceneWalkable(state.zone, x, y);
 }
-export function activePlaces(s) {
+export function activePlaces(state) {
   return {
-    ...(s.zone === 'district'
+    ...(state.zone === 'district'
       ? Object.fromEntries(Object.entries(places).filter(([id]) => id !== 'stairs'))
-      : locals[s.zone] || {}),
-    ...interactables[s.zone],
-    ...exits(s),
+      : locals[state.zone] || {}),
+    ...interactables[state.zone],
+    ...exits(state),
   };
 }
 export function initialState() {
@@ -100,30 +100,30 @@ export function clock(seconds = 0) {
 }
 export function loadState(raw) {
   try {
-    const s = JSON.parse(raw);
+    const state = JSON.parse(raw);
     if (
-      s.version !== 1 ||
-      !Number.isInteger(s.stage) ||
-      s.stage < 0 ||
-      s.stage > 5 ||
-      !Number.isFinite(s.x) ||
-      !Number.isFinite(s.y) ||
-      !Array.isArray(s.events) ||
-      !Number.isFinite(s.elapsed) ||
-      s.elapsed < 0
+      state.version !== 1 ||
+      !Number.isInteger(state.stage) ||
+      state.stage < 0 ||
+      state.stage > 5 ||
+      !Number.isFinite(state.x) ||
+      !Number.isFinite(state.y) ||
+      !Array.isArray(state.events) ||
+      !Number.isFinite(state.elapsed) ||
+      state.elapsed < 0
     )
       return initialState();
     const b = initialState();
-    const oldMaze = s.zone === 'maze';
+    const oldMaze = state.zone === 'maze';
     const result = {
       ...b,
-      ...s,
-      zone: oldMaze ? 'crossing' : scenes[s.zone] ? s.zone : 'district',
-      gear: s.stage === 2 ? 1 : 0,
-      city: { ...freshCity(), ...s.city },
-      life: { ...freshLife(), ...s.life },
-      mind: { ...freshMind(), ...s.mind },
-      events: s.events
+      ...state,
+      zone: oldMaze ? 'crossing' : scenes[state.zone] ? state.zone : 'district',
+      gear: state.stage === 2 ? 1 : 0,
+      city: { ...freshCity(), ...state.city },
+      life: { ...freshLife(), ...state.life },
+      mind: { ...freshMind(), ...state.mind },
+      events: state.events
         .filter(
           (e) =>
             e &&
@@ -132,7 +132,7 @@ export function loadState(raw) {
             Number.isFinite(e.time),
         )
         .slice(-150),
-      visits: s.visits && typeof s.visits === 'object' ? s.visits : {},
+      visits: state.visits && typeof state.visits === 'object' ? state.visits : {},
     };
     result.city.visited = [
       ...new Set([
@@ -142,7 +142,7 @@ export function loadState(raw) {
       ]),
     ].filter((id) => scenes[id]);
     result.city.talked = Array.isArray(result.city.talked) ? result.city.talked : [];
-    if (s.maze?.recovered) result.city.recovered = true;
+    if (state.maze?.recovered) result.city.recovered = true;
     delete result.maze;
     if (oldMaze || !canWalk(result, result.x, result.y)) {
       Object.assign(result, safePosition(result.zone));
@@ -156,105 +156,116 @@ export function loadState(raw) {
     for (const k of ['known', 'routes'])
       if (!result.mind[k] || typeof result.mind[k] !== 'object') result.mind[k] = {};
     integrateOutcome(result, { type: 'restore' });
-    if (!s.continuity) delete result.continuity;
+    if (!state.continuity) delete result.continuity;
     ensureContinuity(result);
     return result;
   } catch {
     return initialState();
   }
 }
-function commitBase(s, type) {
-  if (type.startsWith('travel:')) return travel(s, type.slice(7));
+function commitBase(state, type) {
+  if (type.startsWith('travel:')) return travel(state, type.slice(7));
   let text = '',
     memory = '',
-    mood = s.mood;
+    mood = state.mood;
   const near = (id) =>
-    s.zone === 'district' && Math.hypot(s.x - places[id].x, s.y - places[id].y) < 85;
+    state.zone === 'district' && Math.hypot(state.x - places[id].x, state.y - places[id].y) < 85;
   const localNear = (id) =>
-    locals[s.zone]?.[id] && Math.hypot(s.x - locals[s.zone][id].x, s.y - locals[s.zone][id].y) < 90;
-  if (type === 'talk' && localNear('npc') && !s.city.talked.includes(s.zone)) {
-    s.city.talked.push(s.zone);
-    text = `Iona spoke with ${locals[s.zone].npc.name.split(' · ')[0]} in ${scenes[s.zone].name}.`;
-    memory = locals[s.zone].npc.quote;
+    locals[state.zone]?.[id] &&
+    Math.hypot(state.x - locals[state.zone][id].x, state.y - locals[state.zone][id].y) < 90;
+  if (type === 'talk' && localNear('npc') && !state.city.talked.includes(state.zone)) {
+    state.city.talked.push(state.zone);
+    text = `Iona spoke with ${locals[state.zone].npc.name.split(' · ')[0]} in ${scenes[state.zone].name}.`;
+    memory = locals[state.zone].npc.quote;
     mood = 'Interested';
-  } else if (type === 'unlatch' && s.zone === 'boiler' && localNear('latch') && !s.city.shortcut) {
-    s.city.shortcut = true;
+  } else if (
+    type === 'unlatch' &&
+    state.zone === 'boiler' &&
+    localNear('latch') &&
+    !state.city.shortcut
+  ) {
+    state.city.shortcut = true;
     text =
       'Iona lifted the service-gate bolt, opening a shortcut between Boiler Court and Cable Walk.';
     memory = 'Now I can take the hanging street straight to the boilers. One less long way around.';
     mood = 'Resourceful';
-  } else if (type === 'recover' && s.zone === 'blind' && localNear('cache') && !s.city.recovered) {
-    s.city.recovered = true;
+  } else if (
+    type === 'recover' &&
+    state.zone === 'blind' &&
+    localNear('cache') &&
+    !state.city.recovered
+  ) {
+    state.city.recovered = true;
     text = 'Iona found a resonance coil in the discarded case at Cinder End.';
     memory = 'The street went nowhere, but someone left something worth finding.';
     mood = 'Delighted';
-  } else if (type === 'inspect' && s.stage === 0 && near('pump')) {
-    s.stage = 1;
+  } else if (type === 'inspect' && state.stage === 0 && near('pump')) {
+    state.stage = 1;
     text = 'Iona traced the pump’s uneven rhythm to a cracked drive gear.';
     memory =
       'It still moves a little water. But every third turn, it catches. I know that feeling.';
     mood = 'Intrigued';
-  } else if (type === 'take-gear' && s.stage === 1 && near('market')) {
-    s.stage = 2;
-    s.gear = 1;
+  } else if (type === 'take-gear' && state.stage === 1 && near('market')) {
+    state.stage = 2;
+    state.gear = 1;
     text = 'Iona found a sound brass gear in the market’s communal scrap tray.';
     memory = 'Someone left exactly what I needed. I should leave something useful here, too.';
     mood = 'Hopeful';
-  } else if (type === 'repair' && s.stage === 2 && s.gear === 1 && near('pump')) {
-    s.stage = 3;
-    s.gear = 0;
+  } else if (type === 'repair' && state.stage === 2 && state.gear === 1 && near('pump')) {
+    state.stage = 3;
+    state.gear = 0;
     text = 'Iona fitted the replacement gear. The pump found a steady rhythm again.';
     memory = 'That’s better. Such a small piece, to make that much difference.';
     mood = 'Relieved';
-  } else if (type === 'balance' && s.stage === 3 && near('tank')) {
-    s.stage = 4;
+  } else if (type === 'balance' && state.stage === 3 && near('tank')) {
+    state.stage = 4;
     text = 'Iona balanced the condenser valve. Power returned to the old freight winch.';
     memory = 'The pipes all lead somewhere. Perhaps nothing here is really on its own.';
     mood = 'Proud';
-  } else if (type === 'workshop' && s.stage === 4 && near('gate')) {
-    s.stage = 5;
+  } else if (type === 'workshop' && state.stage === 4 && near('gate')) {
+    state.stage = 5;
     text = 'Iona restarted the freight winch. The hanging cage rose through the green haze.';
     memory = 'There are whole streets below these streets. I want to see where the stairs go.';
     mood = 'Adventurous';
-  } else if (type === 'revisit' && s.stage >= 3 && near('pump') && !s.visits.pumpReturn) {
-    s.visits.pumpReturn = true;
+  } else if (type === 'revisit' && state.stage >= 3 && near('pump') && !state.visits.pumpReturn) {
+    state.visits.pumpReturn = true;
     text = 'Iona returned to the pump she repaired and listened to it for a while.';
     memory =
       'I came back to check. It’s still turning. I didn’t realize how much that mattered to me.';
     mood = 'Reassured';
   } else if (type === 'rest' && near('bench')) {
-    if (s.visits.rest && s.elapsed - s.visits.rest < 30) return null;
-    s.visits.rest = s.elapsed || 0.01;
+    if (state.visits.rest && state.elapsed - state.visits.rest < 30) return null;
+    state.visits.rest = state.elapsed || 0.01;
     text = 'Iona sat beneath the lantern and watched the evening gather in the lanes.';
     memory =
-      s.stage >= 3
+      state.stage >= 3
         ? 'The pump sounds different from here. Less like a machine. More like company.'
         : 'I keep wondering who lit all these lamps. Maybe tomorrow I’ll find out.';
     mood = 'Reflective';
-  } else if (type === 'gift' && !s.gift && s.zone === 'district') {
-    s.gift = { x: s.x + 28, y: s.y, noticed: false };
+  } else if (type === 'gift' && !state.gift && state.zone === 'district') {
+    state.gift = { x: state.x + 28, y: state.y, noticed: false };
     text = 'A visitor left a small tin of luminous moss in the lanes.';
     memory = '';
   } else if (
     type === 'notice-gift' &&
-    s.zone === 'district' &&
-    s.gift &&
-    !s.gift.noticed &&
-    Math.hypot(s.x - s.gift.x, s.y - s.gift.y) < 100
+    state.zone === 'district' &&
+    state.gift &&
+    !state.gift.noticed &&
+    Math.hypot(state.x - state.gift.x, state.y - state.gift.y) < 100
   ) {
-    s.gift.noticed = true;
+    state.gift.noticed = true;
     text = 'Iona noticed the visitor’s moss cutting and decided to look after it.';
     memory = 'Someone wanted this little thing to keep growing. I can help with that.';
     mood = 'Touched';
   } else return null;
-  s.mood = mood;
-  const e = { id: (s.events.at(-1)?.id || 0) + 1, time: s.elapsed, type, text, memory };
-  s.events.push(e);
-  if (s.events.length > 150) s.events.shift();
+  state.mood = mood;
+  const e = { id: (state.events.at(-1)?.id || 0) + 1, time: state.elapsed, type, text, memory };
+  state.events.push(e);
+  if (state.events.length > 150) state.events.shift();
   return e;
 }
-export function objective(s) {
-  if (s.zone !== 'district' || s.stage === 5) return cityObjective(s);
+export function objective(state) {
+  if (state.zone !== 'district' || state.stage === 5) return cityObjective(state);
   return [
     {
       title: 'A heart out of rhythm',
@@ -292,13 +303,13 @@ export function objective(s) {
       step: 'Continue to Sump Crossing',
       target: 'exit-south',
     },
-  ][s.stage];
+  ][state.stage];
 }
 
-export function commit(s, type, payload = {}) {
-  ensureContinuity(s);
-  const points = activePlaces(s);
-  perceive(s, points);
+export function commit(state, type, payload = {}) {
+  ensureContinuity(state);
+  const points = activePlaces(state);
+  perceive(state, points);
   const extended = [
     'study',
     'rummage',
@@ -311,11 +322,11 @@ export function commit(s, type, payload = {}) {
     'restore-beacon',
   ];
   const event = type.startsWith('life-')
-    ? continuityAction(s, type, payload, points)
+    ? continuityAction(state, type, payload, points)
     : extended.includes(type)
-      ? lifeAction(s, type, payload, points)
-      : commitBase(s, type);
-  integrateOutcome(s, event);
-  observeOutcome(s, event);
+      ? lifeAction(state, type, payload, points)
+      : commitBase(state, type);
+  integrateOutcome(state, event);
+  observeOutcome(state, event);
   return event;
 }

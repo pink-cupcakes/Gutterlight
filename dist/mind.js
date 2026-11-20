@@ -1,14 +1,14 @@
 import { ensureContinuity, continuityDecision, ambientDecision } from './continuity.js';
 import { objectKey, note } from './interactions.js';
 // The planner receives remembered objects and discovered routes, not the full city graph.
-export function knownDirection(s, target) {
-  if (target === s.zone) return null;
-  const queue = [[s.zone, null]],
-    seen = new Set([s.zone]);
+export function knownDirection(state, target) {
+  if (target === state.zone) return null;
+  const queue = [[state.zone, null]],
+    seen = new Set([state.zone]);
   for (const [zone, first] of queue)
-    for (const [dir, to] of Object.entries(s.mind.routes[zone] || {})) {
+    for (const [dir, to] of Object.entries(state.mind.routes[zone] || {})) {
       if (
-        !s.city.shortcut &&
+        !state.city.shortcut &&
         ((zone === 'cable' && to === 'boiler') || (zone === 'boiler' && to === 'cable'))
       )
         continue;
@@ -20,32 +20,32 @@ export function knownDirection(s, target) {
     }
   return null;
 }
-function snapshot(s) {
+function snapshot(state) {
   return {
-    stage: s.stage,
-    gear: s.gear,
-    scrap: s.life.scrap,
-    wire: s.life.wire,
-    mechanics: s.life.skills.includes('Mechanics'),
-    salvaging: s.life.skills.includes('Salvaging'),
-    wiring: s.life.skills.includes('Wiring'),
-    listening: s.life.skills.includes('Listening'),
-    resonance: s.life.skills.includes('Resonance'),
-    recovered: s.city.recovered,
-    lamp: s.life.lamp,
-    stable: s.life.stable,
-    beacon: s.life.beacon,
-    parcel: s.life.parcel,
-    promised: s.life.promised,
-    delivered: s.life.delivered,
-    shortcut: s.city.shortcut,
-    looted: [...s.life.looted].sort(),
-    talked: [...s.city.talked].sort(),
+    stage: state.stage,
+    gear: state.gear,
+    scrap: state.life.scrap,
+    wire: state.life.wire,
+    mechanics: state.life.skills.includes('Mechanics'),
+    salvaging: state.life.skills.includes('Salvaging'),
+    wiring: state.life.skills.includes('Wiring'),
+    listening: state.life.skills.includes('Listening'),
+    resonance: state.life.skills.includes('Resonance'),
+    recovered: state.city.recovered,
+    lamp: state.life.lamp,
+    stable: state.life.stable,
+    beacon: state.life.beacon,
+    parcel: state.life.parcel,
+    promised: state.life.promised,
+    delivered: state.life.delivered,
+    shortcut: state.city.shortcut,
+    looted: [...state.life.looted].sort(),
+    talked: [...state.city.talked].sort(),
   };
 }
-function availableActions(s) {
+function availableActions(state) {
   const out = [];
-  const has = (zone, id) => s.mind.studied.includes(objectKey(zone, id));
+  const has = (zone, id) => state.mind.studied.includes(objectKey(zone, id));
   const add = (zone, id, type, ok, effect, reason) => {
     if (has(zone, id)) out.push({ zone, id, type, ok, effect, reason });
   };
@@ -102,7 +102,7 @@ function availableActions(s) {
     },
     'The restored pressure reaches this winch, too.',
   );
-  for (const o of Object.values(s.mind.known)) {
+  for (const o of Object.values(state.mind.known)) {
     if (o.id === 'scrap')
       add(
         o.zone,
@@ -224,9 +224,9 @@ function availableActions(s) {
   );
   return out;
 }
-export function findPlan(s, goal, limit = 2500) {
-  const actions = availableActions(s);
-  const first = snapshot(s),
+export function findPlan(state, goal, limit = 2500) {
+  const actions = availableActions(state);
+  const first = snapshot(state),
     q = [{ state: first, plan: [] }],
     seen = new Set([JSON.stringify(first)]);
   for (let i = 0; i < q.length && i < limit; i++) {
@@ -245,8 +245,8 @@ export function findPlan(s, goal, limit = 2500) {
   }
   return null;
 }
-export function pressureExperiment(s) {
-  const l = s.life;
+export function pressureExperiment(state) {
+  const l = state.life;
   if (l.pressure >= 55 && l.pressure <= 60 && l.trials.length) return { type: 'settle-pressure' };
   const tried = new Set(l.trials.map((t) => t.intake + ':' + t.vent));
   const trials = l.trials;
@@ -290,42 +290,42 @@ export function pressureExperiment(s) {
     ? { type: 'probe', payload: { intake: candidates[0].intake, vent: candidates[0].vent } }
     : null;
 }
-function routeLife(s, d) {
+function routeLife(state, d) {
   if (!d) return null;
-  if (d.zone === s.zone) return d;
-  const dir = knownDirection(s, d.zone);
+  if (d.zone === state.zone) return d;
+  const dir = knownDirection(state, d.zone);
   return dir ? { ...d, id: 'exit-' + dir, type: 'travel:' + dir, payload: {} } : null;
 }
-export function decide(s, points) {
-  ensureContinuity(s);
-  const ongoing = routeLife(s, continuityDecision(s, true));
+export function decide(state, points) {
+  ensureContinuity(state);
+  const ongoing = routeLife(state, continuityDecision(state, true));
   if (ongoing) return ongoing;
-  const knows = (z, id) => s.mind.studied.includes(objectKey(z, id));
+  const knows = (z, id) => state.mind.studied.includes(objectKey(z, id));
   const goals = [];
-  if (s.life.parcel && knows('cable', 'npc')) goals.push((a) => a.delivered);
-  if (knows('district', 'pump') && s.stage < 5) goals.push((a) => a.stage > s.stage);
-  if (knows('lantern', 'lamp') && !s.life.lamp) goals.push((a) => a.lamp);
-  if (knows('boiler', 'regulator') && !s.life.stable) goals.push((a) => a.stable);
-  if (knows('cable', 'beacon') && !s.life.beacon) goals.push((a) => a.beacon);
-  if (knows('blind', 'cache') && !s.city.recovered) goals.push((a) => a.recovered);
-  if (knows('boiler', 'latch') && !s.city.shortcut) goals.push((a) => a.shortcut);
-  if (knows('lantern', 'npc') && !s.life.promised) goals.push((a) => a.promised);
+  if (state.life.parcel && knows('cable', 'npc')) goals.push((a) => a.delivered);
+  if (knows('district', 'pump') && state.stage < 5) goals.push((a) => a.stage > state.stage);
+  if (knows('lantern', 'lamp') && !state.life.lamp) goals.push((a) => a.lamp);
+  if (knows('boiler', 'regulator') && !state.life.stable) goals.push((a) => a.stable);
+  if (knows('cable', 'beacon') && !state.life.beacon) goals.push((a) => a.beacon);
+  if (knows('blind', 'cache') && !state.city.recovered) goals.push((a) => a.recovered);
+  if (knows('boiler', 'latch') && !state.city.shortcut) goals.push((a) => a.shortcut);
+  if (knows('lantern', 'npc') && !state.life.promised) goals.push((a) => a.promised);
   for (const goal of goals) {
-    const plan = findPlan(s, goal);
+    const plan = findPlan(state, goal);
     if (plan) {
       const a = plan[0];
-      if (a.zone !== s.zone) {
-        const dir = knownDirection(s, a.zone);
+      if (a.zone !== state.zone) {
+        const dir = knownDirection(state, a.zone);
         if (!dir) continue;
         return {
           id: 'exit-' + dir,
           type: 'travel:' + dir,
           reason: a.reason,
-          evidence: `Remembered: ${s.mind.known[objectKey(a.zone, a.id)]?.name || a.id}.`,
+          evidence: `Remembered: ${state.mind.known[objectKey(a.zone, a.id)]?.name || a.id}.`,
         };
       }
       if (a.type === 'tune') {
-        const experiment = pressureExperiment(s);
+        const experiment = pressureExperiment(state);
         if (experiment)
           return {
             ...experiment,
@@ -347,10 +347,11 @@ export function decide(s, points) {
   }
   // Curiosity supplies new evidence when remembered affordances cannot solve a need.
   const unstudied = Object.entries(points).filter(
-    ([id, p]) => !p.exit && id !== 'bench' && !knows(s.zone, id),
+    ([id, p]) => !p.exit && id !== 'bench' && !knows(state.zone, id),
   );
   unstudied.sort(
-    ([, a], [, b]) => Math.hypot(s.x - a.x, s.y - a.y) - Math.hypot(s.x - b.x, s.y - b.y),
+    ([, a], [, b]) =>
+      Math.hypot(state.x - a.x, state.y - a.y) - Math.hypot(state.x - b.x, state.y - b.y),
   );
   if (unstudied.length)
     return {
@@ -360,7 +361,7 @@ export function decide(s, points) {
       reason: 'There is something here I have not looked at closely.',
       evidence: unstudied[0][1].name,
     };
-  if (points.npc && !s.city.talked.includes(s.zone))
+  if (points.npc && !state.city.talked.includes(state.zone))
     return {
       id: 'npc',
       type: 'talk',
@@ -368,10 +369,10 @@ export function decide(s, points) {
       evidence: 'A resident knows this street.',
     };
   // Only routes actually observed in a visited neighborhood may be used to find a frontier.
-  for (const [zone, routes] of Object.entries(s.mind.routes))
+  for (const [zone, routes] of Object.entries(state.mind.routes))
     for (const [dir, to] of Object.entries(routes)) {
-      if (s.city.visited.includes(to)) continue;
-      const step = zone === s.zone ? dir : knownDirection(s, zone);
+      if (state.city.visited.includes(to)) continue;
+      const step = zone === state.zone ? dir : knownDirection(state, zone);
       if (step && !points['exit-' + step]?.locked)
         return {
           id: 'exit-' + step,
@@ -380,8 +381,8 @@ export function decide(s, points) {
           evidence: 'An open route, beyond the familiar streets.',
         };
     }
-  if (s.stage >= 3 && !s.visits.pumpReturn && knows('district', 'pump')) {
-    const dir = knownDirection(s, 'district');
+  if (state.stage >= 3 && !state.visits.pumpReturn && knows('district', 'pump')) {
+    const dir = knownDirection(state, 'district');
     return dir
       ? {
           id: 'exit-' + dir,
@@ -390,23 +391,24 @@ export function decide(s, points) {
         }
       : { id: 'pump', type: 'revisit', reason: 'It sounds different now that I know it.' };
   }
-  const continuing = routeLife(s, continuityDecision(s)) || routeLife(s, ambientDecision(s));
+  const continuing =
+    routeLife(state, continuityDecision(state)) || routeLife(state, ambientDecision(state));
   if (continuing) return continuing;
   return {
     id: null,
     type: 'pause',
-    reason: s.continuity.draft
+    reason: state.continuity.draft
       ? 'I have left something unfinished on purpose. I want to hear it again with a little distance.'
       : 'Nothing urgent. The people and questions are still here.',
     wait: 30,
   };
 }
-export function rememberDecision(s, d) {
-  s.mind.intent = d.reason;
-  s.mind.evidence = d.evidence || '';
-  const key = d.type + ':' + s.zone + ':' + d.id;
-  if (key !== s.mind.lastDecision) {
-    s.mind.lastDecision = key;
-    note(s, d.reason, 'intention');
+export function rememberDecision(state, d) {
+  state.mind.intent = d.reason;
+  state.mind.evidence = d.evidence || '';
+  const key = d.type + ':' + state.zone + ':' + d.id;
+  if (key !== state.mind.lastDecision) {
+    state.mind.lastDecision = key;
+    note(state, d.reason, 'intention');
   }
 }

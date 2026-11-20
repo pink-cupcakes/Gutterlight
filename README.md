@@ -39,8 +39,12 @@ The hosted prototype keeps its existing URL. This repository uses the Gutterligh
 ## Development
 
 ```sh
+npm ci
+npm run format:check
 npm test
 ```
+
+Use `npm run format` to apply the pinned formatter. See [Contributing](CONTRIBUTING.md) for module boundaries and review conventions.
 
 Tests cover navigation, guarded world actions, resources, save migration, planning, character continuity across simulated days, and the actual update loop. Browser visual verification was unavailable in the original managed environment.
 

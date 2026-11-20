@@ -1,34 +1,19 @@
-import {
-  ensureContinuity,
-  advanceContinuity,
-  ageLabel,
-  residentVoice,
-  continuityOptions,
-  leaveThought,
-} from './continuity.js';
-import { perceive, studied, practicalOptions, unmet, note, pressure } from './interactions.js';
+import { ensureContinuity, advanceContinuity, ageLabel } from './continuity.js';
+import { perceive } from './interactions.js';
 import { decide, rememberDecision } from './mind.js';
-import { drawLivingWorld, drawActionEffects } from './living-world.js';
-import { sceneOf, exits, locals, crossedExit, streetRoute } from './city.js';
+import { sceneOf, exits, crossedExit, streetRoute } from './city.js';
 import { drawCityMap } from './city-map.js';
-import {
-  W,
-  H,
-  places,
-  boundary,
-  walkable,
-  canWalk,
-  activePlaces,
-  initialState,
-  loadState,
-  clock,
-  commit,
-  objective,
-} from './world-model.js';
-const $ = (id) => document.getElementById(id),
-  canvas = $('world'),
-  ctx = canvas.getContext('2d');
-// Preserve the original storage key so existing worlds survive the Gutterlight rename.
+import { W, H, canWalk, activePlaces, initialState, loadState, commit } from './world-model.js';
+import { drawWorld } from './renderer.js';
+import { createAudio } from './audio.js';
+import { createDialogs } from './ui/dialogs.js';
+import { html, escape } from './ui/html.js';
+
+const $ = (id) => document.getElementById(id);
+const canvas = $('world');
+const ctx = canvas.getContext('2d');
+
+// Preserve the original key so worlds created before the rename still load.
 const SAVE = 'mosslight.foundry.v1';
 let state;
 try {
@@ -36,35 +21,38 @@ try {
 } catch {
   state = initialState();
 }
-let width = innerWidth,
-  height = innerHeight,
-  scale = 1,
-  ox = 0,
-  oy = 0,
-  mode = 'watch',
-  paused = false,
-  keys = new Set(),
-  path = [],
-  destination = null,
-  nearby = null,
-  dir = 0,
-  moving = false,
-  t = 0,
-  last = 0,
-  frame = 0,
-  autoWait = 2,
-  ambient = null,
-  soundOn = false,
-  speechUntil = 0,
-  toastTimer,
-  saveTimer = 0,
-  focusRing = null;
 ensureContinuity(state);
 advanceContinuity(state);
-let pendingDecision = null,
-  effects = [],
-  perceptionClock = 0,
-  hovered = null;
+
+// Camera and viewport; screen coordinates are derived from world coordinates.
+let width = innerWidth;
+let height = innerHeight;
+let scale = 1;
+let ox = 0;
+let oy = 0;
+
+// Movement and the current autonomous action.
+let mode = 'watch';
+const keys = new Set();
+let path = [];
+let destination = null;
+let nearby = null;
+let dir = 0;
+let moving = false;
+let pendingDecision = null;
+let autoWait = 2;
+
+// Animation clocks and transient feedback are separate from the saved world.
+let t = 0;
+let last = 0;
+let frame = 0;
+let speechUntil = 0;
+let toastTimer;
+let saveTimer = 0;
+let focusRing = null;
+const effects = [];
+let perceptionClock = 0;
+let hovered = null;
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const images = {};
 const loads = [
@@ -90,11 +78,40 @@ const loads = [
       im.src = `assets/${name}.png`;
     }),
 );
-const escape = (s) =>
-  String(s).replace(
-    /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
-  );
+
+const audio = createAudio({ toast, soundButton: $('sound') });
+const { tone, toggleSound } = audio;
+const {
+  closeDialog,
+  objectDialog,
+  becomingView,
+  journalView,
+  mapView,
+  giftView,
+  bagView,
+  helpView,
+} = createDialogs({
+  getState: () => state,
+  canvas,
+  clearInput: () => keys.clear(),
+  perform,
+  say,
+  toast,
+  save,
+  setMode,
+  goPlace,
+  playWork: (id) => audio.playWork(state.continuity.works.find((work) => work.id === id)),
+  resetWorld() {
+    state = initialState();
+    path = [];
+    destination = null;
+    mode = 'explore';
+    setMode('explore');
+    save();
+    updateUI();
+  },
+});
+
 function save() {
   try {
     localStorage.setItem(SAVE, JSON.stringify(state));
@@ -190,8 +207,8 @@ function updateUI() {
   $('journal-count').textContent = state.events.filter((e) => e.memory).length;
   $('clock').textContent = ageLabel(state.continuity.age);
   const e = state.events.at(-1);
-  $('latest-event').innerHTML =
-    `<time>${ageLabel(e?.age ?? e?.time ?? 0)} · FIELD NOTES</time>${escape(e?.text || 'The lanes are quiet.')}`;
+  $('latest-event').innerHTML = html`<time>${ageLabel(e?.age ?? e?.time ?? 0)} · FIELD NOTES</time
+    >${escape(e?.text || 'The lanes are quiet.')}`;
   $('resident-state').textContent =
     state.continuity.energy < 0.3
       ? 'Tired · carrying unfinished things'
@@ -201,7 +218,9 @@ function updateUI() {
   $('route-list').innerHTML = Object.entries(exits(state))
     .map(
       ([id, p]) =>
-        `<button data-exit="${id}" class="route-button"><span>${p.dir.toUpperCase()}</span> ${escape(p.name)}${p.locked ? ' · closed' : ''}</button>`,
+        html`<button data-exit="${id}" class="route-button">
+          <span>${p.dir.toUpperCase()}</span> ${escape(p.name)}${p.locked ? ' · closed' : ''}
+        </button>`,
     )
     .join('');
   document.querySelectorAll('[data-exit]').forEach(
@@ -228,408 +247,7 @@ function setMode(m) {
       : 'Explore · WASD, arrow keys, or click to walk',
   );
 }
-function openDialog(html) {
-  keys.clear();
-  $('dialog-content').innerHTML = html;
-  if (!$('dialog').open) $('dialog').showModal();
-}
-function closeDialog() {
-  $('dialog').close();
-  keys.clear();
-  canvas.focus({ preventScroll: true });
-}
-function actionButton(text, fn, primary = false) {
-  const b = document.createElement('button');
-  b.className = `action${primary ? ' primary' : ''}`;
-  b.textContent = text;
-  b.onclick = fn;
-  $('dialog-content').querySelector('.dialog-actions').append(b);
-}
-function tryAction(type, payload = {}) {
-  if (perform(type, payload)) {
-    closeDialog();
-    return true;
-  }
-  const thought = unmet(state, type);
-  note(state, thought, 'attempt');
-  say(thought);
-  toast('Nothing changes yet.');
-  save();
-  return false;
-}
-function objectDialog(id) {
-  const p = activePlaces(state)[id];
-  if (!p) return;
-  if (p.exit) {
-    if (p.locked) {
-      say('It gives a little, then catches. The bolt is somewhere on the other side.');
-      return;
-    }
-    perform('travel:' + p.dir);
-    return;
-  }
-  const seen = studied(state, state.zone, id);
-  const last = state.mind.known[state.zone + ':' + id]?.observation;
-  openDialog(
-    `<div class="eyebrow">${escape(sceneOf(state).name.toUpperCase())}</div><h2>${escape(p.name)}</h2><p>${seen ? escape(id === 'npc' ? residentVoice(state, state.zone) : last || 'The marks of use are easier to see up close.') : 'There is more to this than its shape from a distance.'}</p><div class="dialog-actions"></div>`,
-  );
-  if (!seen) {
-    actionButton(
-      'Look more closely',
-      () => {
-        perform('study', { id });
-        objectDialog(id);
-      },
-      true,
-    );
-    actionButton('Leave it for now', closeDialog);
-    return;
-  }
-  for (const o of continuityOptions(state).filter((o) => o.zone === state.zone && o.id === id))
-    actionButton(
-      o.type === 'life-reflect'
-        ? 'Sit with what happened'
-        : o.type === 'life-company'
-          ? 'Stay and talk'
-          : o.type === 'life-listen'
-            ? 'Listen without looking for a fault'
-            : o.type === 'life-compose'
-              ? 'Return to the unfinished sketch'
-              : o.type === 'life-feedback'
-                ? 'Let them hear the unfinished part'
-                : o.type === 'life-share'
-                  ? 'Share something she made'
-                  : 'Return to what stayed with her',
-      () => tryAction(o.type, o.payload),
-      false,
-    );
-  for (const option of practicalOptions(state, id))
-    actionButton(option.label, () => tryAction(option.type, option.payload || {}), true);
-  if (id === 'pump') {
-    if (state.stage === 0)
-      actionButton('Follow the knocking sound', () => tryAction('inspect'), true);
-    else if (state.stage === 2) actionButton('Try the spare gear', () => tryAction('repair'), true);
-    else if (state.stage >= 3)
-      actionButton('Listen again', () => {
-        perform('revisit');
-        closeDialog();
-        say('It has kept the rhythm.');
-      });
-    else
-      actionButton('Turn the wheel by hand', () => {
-        closeDialog();
-        say('It catches at the missing tooth.');
-      });
-  }
-  if (id === 'market' && state.stage === 1)
-    actionButton('Keep the loose gear', () => tryAction('take-gear'), true);
-  if (id === 'tank')
-    actionButton(
-      'Ease the valve',
-      () => {
-        if (state.stage === 3) tryAction('balance');
-        else {
-          closeDialog();
-          say('The pressure is coming from somewhere else.');
-        }
-      },
-      true,
-    );
-  if (id === 'gate')
-    actionButton(
-      'Test the winch lever',
-      () => {
-        if (state.stage === 4) tryAction('workshop');
-        else {
-          closeDialog();
-          say(state.stage >= 5 ? 'The cage is moving again.' : 'There is no pull in the line yet.');
-        }
-      },
-      true,
-    );
-  if (id === 'benchwork' && (state.continuity.draft || state.continuity.works.length))
-    actionButton('Look through her sound sketches', becomingView);
-  if (id === 'bench')
-    actionButton('Sit for a moment', () => {
-      perform('rest');
-      closeDialog();
-    });
-  if (id === 'npc') {
-    actionButton(
-      'Listen to what they notice',
-      () => {
-        perform('talk');
-        closeDialog();
-        say(residentVoice(state, state.zone));
-      },
-      true,
-    );
-    if (state.zone === 'lantern' && !state.life.promised)
-      actionButton('Ask about the wrapped object', () => {
-        openDialog(
-          `<div class="eyebrow">MARA</div><div class="quote">“A fuse. Edda’s been waiting for it. I haven’t made it across yet.”</div><div class="dialog-actions"></div>`,
-        );
-        actionButton('Offer to take it along', () => tryAction('accept-parcel'), true);
-        actionButton('Another time', closeDialog);
-      });
-    if (state.zone === 'cable' && state.life.parcel)
-      actionButton('Show her Mara’s parcel', () => tryAction('deliver-parcel'), true);
-    if (state.life.beacon)
-      actionButton('Ask about the new signal', () => {
-        closeDialog();
-        say('“Saw the first carriage move a little while ago. Was that your doing?”');
-      });
-  }
-  if (id === 'latch' && !state.city.shortcut)
-    actionButton('Lift the loose bolt', () => tryAction('unlatch'), true);
-  if (id === 'cache' && !state.city.recovered)
-    actionButton('Keep the ringing coil', () => tryAction('recover'), true);
-  if (id === 'regulator')
-    actionButton(
-      state.life.stable ? 'Listen to the steady note' : 'Try the two wheels',
-      () =>
-        state.life.stable ? (closeDialog(), say('It holds its note now.')) : regulatorDialog(),
-      true,
-    );
-  actionButton('Step away', closeDialog);
-}
-function regulatorDialog() {
-  openDialog(
-    `<div class="eyebrow">A SHUDDER IN THE PIPES</div><h2>Two wheels. One rhythm.</h2><div class="pressure-gauge"><div class="safe-band"></div><i id="needle"></i><span id="pressure-reading"></span></div><p class="detail">The green paint is worn, but still visible on the dial.</p><label class="dial-row">Intake <input id="intake" type="range" min="0" max="6" step="1" value="${state.life.intake}"><output id="intake-value">${state.life.intake}</output></label><label class="dial-row">Vent <input id="vent" type="range" min="0" max="6" step="1" value="${state.life.vent}"><output id="vent-value">${state.life.vent}</output></label><div class="dialog-actions"></div>`,
-  );
-  const paint = () => {
-    const value = state.life.pressure;
-    $('needle').style.left = Math.max(0, Math.min(100, (value / 90) * 100)) + '%';
-    $('pressure-reading').textContent = value;
-  };
-  paint();
-  for (const id of ['intake', 'vent'])
-    $(id).oninput = () => ($(id + '-value').textContent = $(id).value);
-  actionButton(
-    'Try this adjustment',
-    () => {
-      const ok = perform('probe', {
-        intake: Number($('intake').value),
-        vent: Number($('vent').value),
-      });
-      if (!ok) toast('That setting has the same note as before.');
-      paint();
-    },
-    true,
-  );
-  actionButton('Secure the mechanism', () => tryAction('settle-pressure'));
-  actionButton('Step back', closeDialog);
-}
-function discoveriesView() {
-  openDialog(
-    `<div class="eyebrow">THINGS IONA HAS PUT TOGETHER</div><h2>A growing understanding.</h2><div class="skill-list">${state.life.skills.map((k) => `<span>${escape(k)}</span>`).join('')}</div><p class="detail">What she has noticed, tried, and kept.</p>${[
-      ...state.mind.notes,
-    ]
-      .reverse()
-      .map(
-        (n) =>
-          `<article class="ledger-entry"><time>${clock(n.time)} · ${escape(n.kind.toUpperCase())}</time><p>${escape(n.text)}</p></article>`,
-      )
-      .join('')}`,
-  );
-}
-function becomingView() {
-  const c = state.continuity;
-  const memory = (id) => c.memories.find((m) => m.id === id);
-  const evidence = (ids) =>
-    ids
-      .map(memory)
-      .filter(Boolean)
-      .map((m) => `<li>${escape(m.text)} <small>${ageLabel(m.at)}</small></li>`)
-      .join('');
-  openDialog(
-    `<div class="eyebrow">IONA · ${ageLabel(c.age)}</div><h2>Still becoming.</h2><p class="character-core">She notices what catches, keeps things others discard, and finds it easier to offer help than to ask for company.</p><p class="detail">Experiences can complicate who she is. They do not replace her overnight.</p><div class="journal-tabs"><button id="back-memories">Her memories</button><button id="leave-thought">Leave a thought</button></div><h3>What she is carrying</h3>${
-      Object.values(c.threads)
-        .map(
-          (th) =>
-            `<article class="thread-card"><span>${c.age >= th.due ? 'ON HER MIND' : 'LEFT TO SETTLE'}</span><p>${escape(th.title)}</p><small>Since ${ageLabel(th.opened)}</small></article>`,
-        )
-        .join('') ||
-      '<p class="detail">The first things she cares about will come from what happens here.</p>'
-    }<h3>Things she is beginning to believe</h3>${c.beliefs.map((b) => `<details class="belief"><summary>${escape(b.text)}</summary><p class="detail">Experiences behind this idea:</p><ul>${evidence(b.evidence)}</ul></details>`).join('') || '<p class="detail">A single success does not make a conviction. She needs more to go on.</p>'}<h3>People becoming familiar</h3><div class="relationship-list">${
-      Object.values(c.relationships)
-        .filter((r) => r.familiarity)
-        .map(
-          (r) =>
-            `<article><b>${escape(r.name)}</b><p>${r.trust > 0.5 ? 'Someone she seeks out' : r.trust > 0.25 ? 'A little easier to be herself' : 'Still finding a way to talk'}</p><small>${r.familiarity} shared encounters</small></article>`,
-        )
-        .join('') || '<p class="detail">She has not stopped to know anyone yet.</p>'
-    }</div><h3>Work that belongs to her</h3>${c.draft ? `<article class="thread-card"><span>UNFINISHED · SOUND SKETCH</span><p>${c.draft.phase === 'feedback' ? 'It works as a sequence of sounds. She is not sure it says anything yet.' : 'A neighbour heard something she missed. She is letting it settle before returning.'}</p></article>` : ''}${
-      [...c.works]
-        .reverse()
-        .map(
-          (w) =>
-            `<article class="work-card"><span class="sound-wave">▁ ▃ ▂ ▆ ▂ ▁ ▄ ▂</span><h4>${escape(w.title)}</h4><p>Arrangement ${w.revision} · ${w.sources.length} remembered sounds${w.feedback ? ' · shaped with ' + escape(w.feedback) : ''}</p><button class="action play-work" data-work="${w.id}">Listen to her arrangement</button><small>${ageLabel(w.at)} · ${w.shared.length ? `Shared with ${w.shared.map((z) => escape(residentVoiceName(z))).join(', ')}` : 'Not shared yet'}</small></article>`,
-        )
-        .join('') ||
-      (!c.draft
-        ? '<p class="detail">There is no assignment here. Something may grow out of what she keeps noticing.</p>'
-        : '')
-    }<h3>After sitting with it</h3>${
-      [...c.reflections]
-        .reverse()
-        .slice(0, 8)
-        .map(
-          (r) =>
-            `<article class="ledger-entry"><time>${ageLabel(r.at)}</time><p>${escape(r.text)}</p></article>`,
-        )
-        .join('') || '<p class="detail">She has not had enough distance from this evening yet.</p>'
-    }<p class="detail">Her life is saved in this browser. Time matures her concerns between visits; she takes action while you are here. Memory and preference changes use local rules in this build.</p>`,
-  );
-  $('back-memories').onclick = () => journalView();
-  $('leave-thought').onclick = thoughtView;
-  document
-    .querySelectorAll('[data-work]')
-    .forEach((b) => (b.onclick = () => playWork(Number(b.dataset.work))));
-}
-let sketchAudio = null,
-  sketchPlayingUntil = 0;
-async function playWork(id) {
-  const w = state.continuity.works.find((w) => w.id === id);
-  if (!w?.notes?.length) return;
-  try {
-    sketchAudio ??= new AudioContext();
-    await sketchAudio.resume();
-    if (sketchAudio.currentTime < sketchPlayingUntil) return;
-    const start = sketchAudio.currentTime + 0.1;
-    for (const n of w.notes) {
-      const o = sketchAudio.createOscillator(),
-        g = sketchAudio.createGain();
-      o.type = 'sine';
-      o.frequency.value = n.frequency;
-      o.connect(g);
-      g.connect(sketchAudio.destination);
-      const at = start + n.beat * 0.38;
-      g.gain.setValueAtTime(0, at);
-      g.gain.linearRampToValueAtTime(0.09, at + 0.025);
-      g.gain.exponentialRampToValueAtTime(0.0001, at + n.duration);
-      o.start(at);
-      o.stop(at + n.duration + 0.1);
-      sketchPlayingUntil = Math.max(sketchPlayingUntil, at + n.duration);
-    }
-    toast('Her remembered street notes, with a little room between them.');
-  } catch {
-    toast('Audio is unavailable in this browser.');
-  }
-}
-function residentVoiceName(z) {
-  return { crossing: 'Orin', lantern: 'Mara', violet: 'Ves', cable: 'Edda' }[z] || z;
-}
-function journalView(tab = 'memories') {
-  const events = state.events
-    .filter((e) => tab === 'history' || e.memory)
-    .slice()
-    .reverse();
-  openDialog(
-    `<div class="eyebrow">${tab === 'memories' ? 'IONA’S NOTEBOOK' : 'THE OBSERVER · COMMITTED EVENTS'}</div><h2>${tab === 'memories' ? 'Things worth keeping.' : 'What happened here.'}</h2><div class="journal-tabs"><button id="memories-tab" class="${tab === 'memories' ? 'selected' : ''}">Her memories</button><button id="becoming-tab">Becoming</button><button id="discoveries-tab">Connections</button><button id="history-tab" class="${tab === 'history' ? 'selected' : ''}">World history</button></div>${events.map((e) => `<article class="ledger-entry"><time>${ageLabel(e.age ?? e.time)}</time><p class="${tab === 'memories' ? 'memory' : ''}">${escape(tab === 'memories' ? e.memory : e.text)}</p></article>`).join('')}<p class="detail">${tab === 'history' ? 'The observer only reads events that have already happened.' : 'Experiences, relationships, and unfinished work persist on this device.'}</p><div class="dialog-actions"><button class="action" id="export">Export world history</button></div>`,
-  );
-  $('becoming-tab').onclick = becomingView;
-  $('discoveries-tab').onclick = discoveriesView;
-  $('memories-tab').onclick = () => journalView('memories');
-  $('history-tab').onclick = () => journalView('history');
-  $('export').onclick = () => {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'gutterlight-world.json';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  };
-}
-function mapView() {
-  openDialog(
-    `<div class="eyebrow">STREETS YOU HAVE WALKED</div><h2>The Lower Undercity</h2><canvas id="city-map" width="640" height="350" style="width:100%;border:1px solid #66794c;border-radius:4px"></canvas><p class="detail">Bright marker: you. Dim markers: unexplored passages. A broken line marks the bolted service gate. ${state.city.visited.length} of 7 neighborhoods discovered.</p><div class="dialog-actions">${Object.entries(
-      exits(state),
-    )
-      .map(
-        ([id, p]) =>
-          `<button class="action" data-route="${id}">${p.dir.toUpperCase()} · ${escape(p.name)}${p.locked ? ' (bolted shortcut)' : ''}</button>`,
-      )
-      .join('')}</div>`,
-  );
-  drawCityMap($('city-map'), state, true);
-  document.querySelectorAll('[data-route]').forEach(
-    (b) =>
-      (b.onclick = () => {
-        setMode('explore');
-        closeDialog();
-        goPlace(b.dataset.route);
-      }),
-  );
-}
-function thoughtView() {
-  openDialog(
-    '<div class="eyebrow">A THOUGHT LEFT BY THE LANTERN</div><h2>Something she might carry.</h2><p>A question, not an instruction. She will read it when she returns, and may take time to make anything of it.</p><div class="dialog-actions"></div>',
-  );
-  for (const [influence, text] of [
-    ['care', 'Who would you visit with nothing to bring?'],
-    ['curiosity', 'What would you make just for yourself?'],
-    ['independence', 'Could you leave a working thing alone?'],
-  ])
-    actionButton(text, () => {
-      if (leaveThought(state, influence)) {
-        save();
-        closeDialog();
-        toast('A thought left beside the lantern.');
-      } else toast('Let the last thought have a little time.');
-    });
-  actionButton('Leave nothing for now', closeDialog);
-}
-function giftView() {
-  if (state.zone !== 'district') {
-    toast('Leave gifts in the Foundry Lanes, where they can grow.');
-    return;
-  }
-  openDialog(
-    `<div class="eyebrow">A VISITOR’S SMALL KINDNESS</div><h2>Leave something growing.</h2><p>${state.gift ? 'A moss cutting already lives in these lanes. Iona will remember the kindness.' : 'Leave a tin of luminous moss beside Iona. It will stay in this world, and she may decide to look after it.'}</p><p class="detail">Visitor gifts are saved on this device in this prototype.</p><div class="dialog-actions"></div>`,
-  );
-  actionButton('Leave a thought', thoughtView);
-  actionButton(
-    state.gift ? 'Return to the lanes' : 'Leave a moss cutting',
-    () => {
-      if (!state.gift) {
-        perform('gift');
-        toast('A gift left in the lanes');
-      }
-      closeDialog();
-    },
-    true,
-  );
-}
-function bagView() {
-  openDialog(
-    `<div class="eyebrow">IONA’S SATCHEL</div><h2>A few useful things.</h2><p>${state.gear ? '⚙ Brass gear · 1<br>A sound eight-tooth gear, waiting for the pump.' : state.stage >= 3 ? 'The spare gear is part of the pump now.' : 'There is room for something worth keeping.'}</p><p>${state.city.recovered && !state.life.coilUsed ? 'Resonance coil · rings when touched<br>' : ''}${state.life.scrap} workable copper · ${state.life.wire} wire coils<br>${state.life.parcel ? 'Wrapped fuse · meant for Edda<br>' : ''}Brass wrist tool · always carried<br>Leather notebook · ${state.events.filter((e) => e.memory).length} memories</p><div class="dialog-actions"></div>`,
-  );
-  actionButton('Read the notebook', () => journalView());
-  actionButton('Return to the lanes', closeDialog, true);
-}
-function helpView() {
-  openDialog(
-    `<div class="eyebrow">WELCOME TO GUTTERLIGHT</div><h2>A little life. A big world.</h2><p>Explore a handmade industrial district as Iona, or choose <strong>Watch Iona</strong> and follow her curiosity. Walk off the end of an open street to enter the next neighborhood. Alleys branch, loop back, or end at walls. Machines have habits. People notice things. Let Iona look, listen, and try what she learns. Press M to see the streets you have discovered. Your discoveries and shortcut persist between visits.</p><p><strong>WASD / arrow keys</strong> · move<br><strong>Click / tap the ground</strong> · walk there<br><strong>E</strong> · interact nearby<br><strong>J / B / M / G</strong> · journal / satchel / map / gift<br><strong>Escape</strong> · close a panel</p><p class="detail">Playable prototype. Iona is a fictional autonomous character using a local symbolic planner, remembered observations, and composable skill rules in this build; live AI is not connected. Concerns mature over real hours and days, including between visits. Iona acts while this page is visible; no conversations or accomplishments are invented while it is closed. Memories, relationships, and evolving preferences are stored on this device. This is not a server-running life or a live language-model character. The observer reports committed events.</p><div class="dialog-actions"></div>`,
-  );
-  actionButton('Return to the lanes', closeDialog, true);
-  actionButton('Start a fresh world', () => {
-    openDialog(
-      '<div class="eyebrow">START AGAIN</div><h2>A new evening?</h2><p>This will erase Iona’s memories and your progress on this device. Export the history from the journal first if you want to keep it.</p><div class="dialog-actions"></div>',
-    );
-    actionButton('Keep this world', closeDialog, true);
-    actionButton('Erase and begin again', () => {
-      state = initialState();
-      path = [];
-      destination = null;
-      mode = 'explore';
-      setMode('explore');
-      save();
-      updateUI();
-      closeDialog();
-    });
-  });
-}
+
 function route(x, y) {
   return streetRoute(state, x, y);
 }
@@ -768,160 +386,23 @@ function transform() {
 function screen(x, y) {
   return { x: x * scale + ox, y: y * scale + oy };
 }
-function glow(x, y, r, color) {
-  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-  g.addColorStop(0, color);
-  g.addColorStop(1, 'transparent');
-  ctx.fillStyle = g;
-  ctx.fillRect(x - r, y - r, r * 2, r * 2);
-}
+
 function draw() {
-  ctx.clearRect(0, 0, width, height);
   transform();
-  ctx.save();
-  ctx.translate(ox, oy);
-  ctx.scale(scale, scale);
-  {
-    ctx.drawImage(images[state.zone] || images.district, 0, 0, W, H);
-    // Gentle luminous breath, airborne dust, and drifting steam.
-    ctx.globalCompositeOperation = 'screen';
-    glow(340, 280, 210, `rgba(108,190,44,${0.07 + Math.sin(t * 0.7) * 0.02})`);
-    if (state.stage >= 4) glow(895, 260, 180, 'rgba(147,216,92,.18)');
-    glow(1350, 355, 150, 'rgba(243,161,58,.06)');
-    ctx.globalCompositeOperation = 'source-over';
-    if (!reduced) {
-      for (let i = 0; i < 30; i++) {
-        const px = (i * 173.7 + t * (i % 2 ? 7 : -5) + W * 10) % W,
-          py = 310 + ((i * 73.3 - t * 8 + H * 10) % 550);
-        ctx.globalAlpha = 0.1 + 0.16 * Math.sin(t + i) ** 2;
-        ctx.fillStyle = i % 4 ? '#c7c995' : '#c6ff9c';
-        ctx.beginPath();
-        ctx.arc(px, py, i % 3 === 0 ? 1.7 : 1, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-      for (let i = 0; i < 6; i++) {
-        const a = (t * 0.15 + i / 6) % 1;
-        glow(
-          459 + Math.sin(a * 6 + i) * 20,
-          277 - a * 110,
-          15 + a * 35,
-          `rgba(181,199,172,${(1 - a) * 0.07})`,
-        );
-      }
-    }
-  }
-  for (const [id, p] of Object.entries(activePlaces(state))) {
-    const close = nearby === id || hovered === id,
-      active = close;
-    const distance = Math.hypot(state.x - p.x, state.y - p.y);
-    if (!p.exit && distance > 235 && hovered !== id) continue;
-    const y = p.y - 53;
-    ctx.globalAlpha = active ? 1 : 0.7;
-    ctx.fillStyle = active ? '#1c291bdb' : '#14221cd9';
-    ctx.strokeStyle = active ? '#d7cb8b' : '#a8b799';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(p.x, y - 12);
-    ctx.lineTo(p.x + 12, y);
-    ctx.lineTo(p.x, y + 12);
-    ctx.lineTo(p.x - 12, y);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = active ? '#eddb91' : '#cbd6b5';
-    ctx.font = '15px Georgia';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(p.exit ? (p.locked ? '×' : '◇') : '·', p.x, y + 1);
-    if (close || p.exit) {
-      ctx.font = '12px "DM Sans",sans-serif';
-      ctx.fillStyle = '#f3e7bf';
-      ctx.shadowColor = '#000';
-      ctx.shadowBlur = 5;
-      ctx.fillText(
-        p.exit ? p.dir.toUpperCase() + ' · ' + p.name : p.name,
-        Math.max(150, Math.min(W - 150, p.x)),
-        y - 25,
-      );
-      ctx.shadowBlur = 0;
-    }
-  }
-  ctx.globalAlpha = 1;
-  drawLivingWorld(ctx, state, images, t, reduced);
-  drawActionEffects(ctx, effects, t);
-  if (state.zone === 'district' && state.gift) {
-    const im = images.items;
-    ctx.drawImage(
-      im,
-      0,
-      im.height / 2,
-      im.width / 3,
-      im.height / 2,
-      state.gift.x - 16,
-      state.gift.y - 37,
-      32,
-      42,
-    );
-    glow(state.gift.x, state.gift.y - 15, 28, 'rgba(149,224,97,.12)');
-  }
-  if (focusRing && focusRing.until > t) {
-    ctx.strokeStyle = `rgba(216,229,172,${Math.min(1, focusRing.until - t)})`;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.ellipse(focusRing.x, focusRing.y, 15, 7, 0, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  drawResident(state.y, false);
-  // Shared feet anchor and a stable contact shadow keep the painted frames grounded.
-  ctx.fillStyle = '#07120b70';
-  ctx.beginPath();
-  ctx.ellipse(state.x, state.y + 1, 18, 7, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#c6da97a8';
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.ellipse(state.x, state.y + 1, 22, 9, 0, 0, Math.PI * 2);
-  ctx.stroke();
-  const frames = [
-    [
-      [123, 6, 132, 297],
-      [418, 7, 125, 296],
-      [719, 7, 119, 293],
-      [1009, 7, 125, 296],
-    ],
-    [
-      [126, 320, 108, 298],
-      [394, 320, 173, 297],
-      [705, 319, 109, 296],
-      [986, 320, 163, 294],
-    ],
-    [
-      [109, 637, 132, 297],
-      [410, 637, 128, 298],
-      [701, 638, 122, 297],
-      [998, 637, 134, 298],
-    ],
-    [
-      [123, 953, 117, 298],
-      [369, 953, 194, 298],
-      [727, 951, 98, 300],
-      [970, 953, 182, 291],
-    ],
-  ];
-  const [sx, sy, sw, sh] = frames[dir][moving ? frame : 0];
-  const dh = 92,
-    dw = (sw / sh) * dh;
-  ctx.drawImage(images.iona, sx, sy, sw, sh, state.x - dw / 2, state.y - dh, dw, dh);
-  drawResident(state.y, true);
-  if (state.zone === 'district' && state.stage >= 3) {
-    ctx.strokeStyle = '#afd6b4aa';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.ellipse(1413, 544, 12 + Math.sin(t * 3) * 3, 4, 0, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  ctx.restore();
+  drawWorld(ctx, {
+    state,
+    images,
+    time: t,
+    camera: { width, height, scale, ox, oy },
+    nearby,
+    hovered,
+    effects,
+    reduced,
+    focusRing,
+    direction: dir,
+    moving,
+    frame,
+  });
   drawCityMap($('minimap'), state);
   const pt = screen(state.x, state.y);
   if (!$('speech').hidden) {
@@ -938,27 +419,7 @@ function draw() {
     $('interact-prompt').style.top = Math.min(height - 150, pt.y + 24 * scale) + 'px';
   }
 }
-function drawResident(playerY, front) {
-  const p = locals[state.zone]?.npc;
-  if (!p || p.y > playerY !== front) return;
-  const im = images.residents;
-  const frames = [
-    [120, 10, 299, 732],
-    [611, 23, 272, 719],
-    [142, 772, 282, 753],
-    [588, 769, 334, 754],
-  ];
-  const [x, y, w, h] = frames[p.npc],
-    dh = 102,
-    dw = (w / h) * dh;
-  const sway = reduced ? 0 : Math.sin(t * 0.45 + p.npc) * 7,
-    bob = reduced ? 0 : Math.sin(t * 1.5 + p.npc) * 1.3;
-  ctx.fillStyle = '#07120b75';
-  ctx.beginPath();
-  ctx.ellipse(p.x, p.y, 20, 7, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.drawImage(im, x, y, w, h, p.x - dw / 2 + sway, p.y - dh + bob, dw, dh);
-}
+
 function loop(now) {
   const dt = Math.min((now - last) / 1000 || 0, 0.05);
   last = now;
@@ -985,56 +446,7 @@ function loop(now) {
   }
   requestAnimationFrame(loop);
 }
-function tone(freq) {
-  if (!ambient || !soundOn) return;
-  const o = ambient.createOscillator(),
-    g = ambient.createGain();
-  o.type = 'sine';
-  o.frequency.value = freq;
-  o.connect(g);
-  g.connect(ambient.destination);
-  g.gain.setValueAtTime(0.045, ambient.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.001, ambient.currentTime + 0.8);
-  o.start();
-  o.stop(ambient.currentTime + 0.9);
-}
-async function toggleSound() {
-  try {
-    if (!ambient) {
-      ambient = new AudioContext();
-      const master = ambient.createGain();
-      master.gain.value = 0.022;
-      master.connect(ambient.destination);
-      for (const freq of [55, 82.4, 110]) {
-        const o = ambient.createOscillator();
-        o.type = 'sine';
-        o.frequency.value = freq;
-        o.connect(master);
-        o.start();
-      }
-      const buffer = ambient.createBuffer(1, ambient.sampleRate * 3, ambient.sampleRate);
-      const d = buffer.getChannelData(0);
-      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * 0.25;
-      const noise = ambient.createBufferSource(),
-        filter = ambient.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.frequency.value = 420;
-      noise.buffer = buffer;
-      noise.loop = true;
-      noise.connect(filter);
-      filter.connect(master);
-      noise.start();
-    }
-    soundOn = !soundOn;
-    if (soundOn) await ambient.resume();
-    else await ambient.suspend();
-    $('sound').style.color = soundOn ? '#d6e8a6' : '';
-    $('sound').setAttribute('aria-label', soundOn ? 'Mute ambient sound' : 'Enable ambient sound');
-    toast(soundOn ? 'Ambient sound on · pipes, hum, and evening air' : 'Ambient sound off');
-  } catch {
-    toast('Audio is unavailable in this browser.');
-  }
-}
+
 $('explore').onclick = () => setMode('explore');
 $('watch').onclick = () => setMode('watch');
 $('journal').onclick = () => journalView();
@@ -1117,7 +529,7 @@ document.addEventListener('visibilitychange', () => {
   last = performance.now();
   if (document.hidden) {
     save();
-    if (ambient) ambient.suspend();
+    audio.suspend();
   } else {
     advanceContinuity(state);
     updateUI();
@@ -1125,7 +537,7 @@ document.addEventListener('visibilitychange', () => {
       toast('Time has passed. Her unfinished thoughts are still here.');
       state.continuity.returnGap = 0;
     }
-    if (soundOn && ambient) ambient.resume();
+    audio.resume();
   }
 });
 window.addEventListener('resize', resize);
@@ -1147,6 +559,7 @@ Promise.all(loads)
     if (state.stage === 0) setTimeout(() => say('Something’s knocking out of time.'), 1600);
   })
   .catch(() => {
-    $('loading').innerHTML =
-      '<h2>The lanes couldn’t load.</h2><p>One of the art files is missing. Please reload to try again.</p><button onclick="location.reload()">Reload</button>';
+    $('loading').innerHTML = html`<h2>The lanes couldn’t load.</h2>
+      <p>One of the art files is missing. Please reload to try again.</p>
+      <button onclick="location.reload()">Reload</button>`;
   });
