@@ -1,5 +1,5 @@
 {
-  "name": "mosslight",
+  "name": "gutterlight",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -10,5 +10,12 @@
   "description": "A painted 2D undercity with an autonomous character, remembered experiences and evolving relationships.",
   "engines": {
     "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pink-cupcakes/Gutterlight.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pink-cupcakes/Gutterlight/issues"
   }
 }

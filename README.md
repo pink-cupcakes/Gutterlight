@@ -1,8 +1,8 @@
-# Mosslight
+# Gutterlight
 
 A painterly 2D undercity where an autonomous character, Iona, explores interconnected streets, learns practical skills, and carries experiences into later choices.
 
-**[Play Mosslight](https://mosslight-foundry-lanes.rustylapis6.chatgpt.site/)**
+**[Play the hosted prototype](https://mosslight-foundry-lanes.rustylapis6.chatgpt.site/)**
 
 ![The Foundry Lanes](dist/assets/district.png)
 
@@ -11,8 +11,8 @@ A painterly 2D undercity where an autonomous character, Iona, explores interconn
 Requires **Node.js 20 or newer**. No dependencies, API keys, build step, or hosted account are needed.
 
 ```sh
-git clone https://github.com/pink-cupcakes/mosslight.git
-cd mosslight
+git clone https://github.com/pink-cupcakes/Gutterlight.git
+cd Gutterlight
 npm start
 ```
 
@@ -34,6 +34,8 @@ Iona uses a **local, rule-based planner with authored narrative possibilities**,
 
 Each browser has its own world. Saves stay in local storage; visitors do not share one Iona, and there is no server simulation or cross-device sync. Time away matures concerns, but actions and conversations occur only while the page is open. Export a save from **Journal → World history → Export world history** before clearing browser data. The hosted version and a local copy have separate saves because they use different origins.
 
+The hosted prototype keeps its existing URL. This repository uses the Gutterlight name; the original browser storage key is retained for save compatibility.
+
 ## Development
 
 ```sh
@@ -51,4 +53,4 @@ To deploy independently, upload the **contents of `dist/`** to a static web host
 
 ## Artwork and inspiration
 
-The bundled environments, character sprites, residents, and inventory art were generated with GPT image tools for this project. The visual direction is an industrial steampunk undercity. Pino’s public character project informed the emphasis on persistent memory and unfinished concerns; Mosslight’s implementation and fictional events are its own.
+The bundled environments, character sprites, residents, and inventory art were generated with GPT image tools for this project. The visual direction is an industrial steampunk undercity. Pino’s public character project informed the emphasis on persistent memory and unfinished concerns; Gutterlight’s implementation and fictional events are its own.

@@ -1,6 +1,6 @@
-# Mosslight — The Lower Undercity
+# Gutterlight — The Lower Undercity
 
-A painted 2D browser adventure based on the Mosslight project. Seven connected neighborhoods form an explorable street network: alleys branch, bridges loop back, a service gate opens a shortcut, and a dead-end lane contains salvage. Moving through an open screen exit changes the scene directly.
+A painted 2D browser adventure based on the Gutterlight project. Seven connected neighborhoods form an explorable street network: alleys branch, bridges loop back, a service gate opens a shortcut, and a dead-end lane contains salvage. Moving through an open screen exit changes the scene directly.
 
 ## Play
 
@@ -67,4 +67,4 @@ Iona can collect street rhythms, make an imperfect sound sketch, seek feedback, 
 
 Time semantics: `age` is monotonic and uses wall time or active frame time, whichever is greater for an update. Clock rollback cannot make age negative or replay consequences. Returning after absence can restore energy and mature a concern, but does not advance narrative phases or emit events. Reloading the same wall-time checkpoint is idempotent. There is no scheduler, backend memory, cross-device sync, or live language model in this build.
 
-Design research: Pino's public [architecture](https://pinos.world/facts), [memory API](https://pinos.world/api/v1/memories), and [developer interface](https://pinos.world/developers) informed the distinction between persistent concerns, remembered events, slow identity change and world-validated actions. Mosslight's fictional events and prose are original. Pino's model-driven character is not implemented or claimed here.
+Design research: Pino's public [architecture](https://pinos.world/facts), [memory API](https://pinos.world/api/v1/memories), and [developer interface](https://pinos.world/developers) informed the distinction between persistent concerns, remembered events, slow identity change and world-validated actions. Gutterlight's fictional events and prose are original. Pino's model-driven character is not implemented or claimed here.
