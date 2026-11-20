@@ -48,7 +48,7 @@ JavaScript syntax and asset references checked. Browser visual QA remains unveri
 
 ## Living systems and discovery
 
-The interface now presents Iona’s attention instead of a prescriptive quest checklist. Interaction markers appear near Iona or under the pointer. The notebook’s Connections view records observations, experiments, acquired skills and concise working intentions.
+The interface tracks one objective in the HUD, the local minimap, and the scene. Approach a resident or prop for an interaction prompt, or click it to walk over and interact. The notebook’s Connections view records observations, experiments, acquired skills and concise working intentions.
 
 `interactions.js` owns new persistent affordances and resource checks: salvage piles, a winding bench, a broken street lamp, a two-wheel pressure regulator, Mara’s parcel for Edda, and a silent signal mast. Notice, Mechanics, Salvaging, Wiring, Listening and Resonance can be combined. Materials and the recovered coil are consumed exactly once where required. Older saves receive defaults without losing progress.
 

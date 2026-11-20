@@ -9,8 +9,8 @@ export const interactables = {
       kind: 'scrap',
     },
     benchwork: {
-      x: 970,
-      y: 565,
+      x: 1400,
+      y: 514,
       name: 'Winding bench',
       verb: 'Examine the bench',
       kind: 'workbench',

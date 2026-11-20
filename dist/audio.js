@@ -1,5 +1,5 @@
 // Audio contexts are created only after the visitor requests sound.
-export function createAudio({ toast, soundButton }) {
+export function createAudio({ toast }) {
   let ambient = null;
   let soundOn = false;
   let sketchAudio = null;
@@ -76,11 +76,6 @@ export function createAudio({ toast, soundButton }) {
       soundOn = !soundOn;
       if (soundOn) await ambient.resume();
       else await ambient.suspend();
-      soundButton.style.color = soundOn ? '#d6e8a6' : '';
-      soundButton.setAttribute(
-        'aria-label',
-        soundOn ? 'Mute ambient sound' : 'Enable ambient sound',
-      );
       toast(soundOn ? 'Ambient sound on · pipes, hum, and evening air' : 'Ambient sound off');
     } catch {
       toast('Audio is unavailable in this browser.');
@@ -92,5 +87,5 @@ export function createAudio({ toast, soundButton }) {
   function resume() {
     if (soundOn && ambient) ambient.resume();
   }
-  return { playWork, tone, toggleSound, suspend, resume };
+  return { playWork, tone, toggleSound, suspend, resume, isSoundOn: () => soundOn };
 }
