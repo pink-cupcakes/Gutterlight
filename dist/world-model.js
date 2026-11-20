@@ -26,7 +26,15 @@ export const W = 1672,
   H = 941;
 export const places = {
   pump: { x: 1290, y: 580, name: 'Brass pump', verb: 'Inspect pump', icon: '◇' },
-  market: { x: 1295, y: 482, name: 'Scrap market', verb: 'Search the market', icon: '⚙' },
+  market: {
+    x: 1295,
+    y: 482,
+    name: 'Scrap broker',
+    verb: 'Talk to the scrap broker',
+    speaker: 2,
+    quote:
+      'If you need a part, try the scrap tray. Leave anything you can’t use for the next pair of hands.',
+  },
   tank: { x: 485, y: 482, name: 'Moss condenser', verb: 'Inspect condenser', icon: '✧' },
   gate: { x: 1060, y: 410, name: 'Freight winch', verb: 'Inspect freight winch', icon: '⌑' },
   stairs: { x: 890, y: 907, name: 'Sump Crossing', verb: 'Continue to Sump Crossing', icon: '⌄' },
@@ -76,7 +84,7 @@ export function initialState() {
     mind: freshMind(),
     continuity: freshContinuity(),
     x: 820,
-    y: 656,
+    y: 550,
     stage: 0,
     gear: 0,
     elapsed: 0,
@@ -265,7 +273,7 @@ function commitBase(state, type) {
   return e;
 }
 export function objective(state) {
-  if (state.zone !== 'district' || state.stage === 5) return cityObjective(state);
+  if (state.zone !== 'district') return cityObjective(state);
   return [
     {
       title: 'A heart out of rhythm',
@@ -276,7 +284,7 @@ export function objective(state) {
     {
       title: 'One good tooth',
       text: 'A cracked gear. Somewhere in this district, there must be a spare.',
-      step: 'Search the scrap market',
+      step: 'Find the scrap broker',
       target: 'market',
     },
     {

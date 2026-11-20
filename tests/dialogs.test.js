@@ -14,6 +14,7 @@ function harness(t) {
       const node = {
         open: false,
         style: {},
+        classList: { toggle() {} },
         focus() {},
         showModal() {
           this.open = true;
@@ -23,6 +24,7 @@ function harness(t) {
         },
         querySelector() {
           return {
+            setAttribute() {},
             append(button) {
               actions.push(button);
             },
@@ -54,6 +56,9 @@ function harness(t) {
   const noop = () => {};
   const dialogs = createDialogs({
     getState: () => state,
+    getMode: () => 'explore',
+    toggleSound: noop,
+    isSoundOn: () => false,
     canvas: element('world'),
     clearInput: noop,
     perform: (type, payload) => Boolean(commit(state, type, payload)),
@@ -95,6 +100,18 @@ test('object dialogs commit observations and repairs through the controller', (t
   ui.click('Follow the knocking sound');
   assert.equal(ui.state.stage, 1);
   assert.equal(ui.element('dialog').open, false);
+});
+
+test('the scrap broker speaks immediately and offers the quest gear when needed', (t) => {
+  const ui = harness(t);
+  Object.assign(ui.state, places.pump);
+  commit(ui.state, 'inspect');
+  Object.assign(ui.state, places.market);
+  ui.dialogs.objectDialog('market');
+  assert.match(ui.element('dialog-content').innerHTML, /try the scrap tray/);
+  ui.click('Keep the loose gear');
+  assert.equal(ui.state.stage, 2);
+  assert.equal(ui.state.gear, 1);
 });
 
 test('notebook navigation escapes remembered text and reset views read the new world', (t) => {

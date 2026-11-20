@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 test('Iona discovers, combines skills, experiments, restores the signal, and continues living', async () => {
   const els = new Map(),
     store = new Map();
+  const windowHandlers = new Map();
+  const actions = [];
   let tick;
   const noop = () => {};
   const context = new Proxy(
@@ -24,7 +26,9 @@ test('Iona discovers, combines skills, experiments, restores the signal, and con
         setAttribute: noop,
         focus: noop,
         remove: noop,
-        append: noop,
+        append(button) {
+          actions.push(button);
+        },
         getContext: () => context,
         showModal() {
           this.open = true;
@@ -43,9 +47,11 @@ test('Iona discovers, combines skills, experiments, restores the signal, and con
     querySelector: () => element('brand'),
     querySelectorAll: () => [],
     addEventListener: noop,
-    createElement: () => element('temp'),
+    createElement: () => ({}),
   };
-  globalThis.window = { addEventListener: noop };
+  globalThis.window = {
+    addEventListener: (event, handler) => windowHandlers.set(event, handler),
+  };
   globalThis.innerWidth = 1440;
   globalThis.innerHeight = 900;
   globalThis.devicePixelRatio = 1;
@@ -64,8 +70,23 @@ test('Iona discovers, combines skills, experiments, restores the signal, and con
   await import('../dist/game.js');
   await new Promise((r) => setTimeout(r, 5));
   assert.equal(typeof tick, 'function');
-  element('watch').onclick();
-  for (let i = 1; i < 45000; i++) tick(i * 50);
+  for (let i = 1; i <= 90; i++) tick(i * 50);
+  const saveKey = 'mosslight.foundry.v1';
+  const spawn = JSON.parse(store.get(saveKey));
+  assert.equal(spawn.x, 820, 'the opening waits for the player to move');
+  assert.equal(spawn.y, 550);
+  assert.equal(element('return-control').hidden, true);
+  windowHandlers.get('keydown')({ key: 'ArrowRight', preventDefault: noop });
+  for (let i = 91; i <= 105; i++) tick(i * 50);
+  windowHandlers.get('keyup')({ key: 'ArrowRight' });
+  windowHandlers.get('blur')();
+  assert.ok(JSON.parse(store.get(saveKey)).x > spawn.x, 'arrows move Iona immediately');
+  assert.equal(JSON.parse(store.get(saveKey)).y, spawn.y);
+
+  element('help').onclick();
+  actions.find((action) => action.textContent === 'Watch Iona').onclick();
+  assert.equal(element('return-control').hidden, false);
+  for (let i = 106; i < 45000; i++) tick(i * 50);
   const saved = JSON.parse(store.get('mosslight.foundry.v1'));
   assert.equal(saved.stage, 5, 'autonomous loop should finish all five stages');
   assert.equal(saved.gear, 0);

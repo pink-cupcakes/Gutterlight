@@ -10,6 +10,9 @@ const $ = (id) => document.getElementById(id);
 // Dialogs request world actions through the controller; they never replace game state.
 export function createDialogs({
   getState,
+  getMode,
+  toggleSound,
+  isSoundOn,
   canvas,
   clearInput,
   perform,
@@ -21,10 +24,15 @@ export function createDialogs({
   resetWorld,
   playWork,
 }) {
-  function openDialog(html) {
+  function openDialog(markup, encounter = false) {
     clearInput();
-    $('dialog-content').innerHTML = html;
-    if (!$('dialog').open) $('dialog').showModal();
+    const dialog = $('dialog');
+    const content = $('dialog-content');
+    content.innerHTML = markup;
+    content.querySelector('h2')?.setAttribute('id', 'dialog-title');
+    dialog.classList.toggle('encounter', encounter);
+    if (!dialog.open) dialog.showModal();
+    else $('close-dialog').focus();
   }
 
   function closeDialog() {
@@ -39,6 +47,7 @@ export function createDialogs({
     b.textContent = text;
     b.onclick = fn;
     $('dialog-content').querySelector('.dialog-actions').append(b);
+    return b;
   }
 
   function tryAction(type, payload = {}) {
@@ -67,22 +76,27 @@ export function createDialogs({
       perform('travel:' + p.dir);
       return;
     }
+    const speaker = p.speaker !== undefined;
+    if (speaker) {
+      if (!studied(state, state.zone, id)) perform('study', { id });
+      if (id === 'npc' && !state.city.talked.includes(state.zone)) perform('talk');
+      $('speech').hidden = true;
+    }
     const seen = studied(state, state.zone, id);
     const last = state.mind.known[state.zone + ':' + id]?.observation;
-    const observation =
-      id === 'npc'
-        ? residentVoice(state, state.zone)
-        : last || 'The marks of use are easier to see up close.';
-    const description = seen
-      ? escape(observation)
-      : 'There is more to this than its shape from a distance.';
+    const observation = id === 'npc' ? residentVoice(state, state.zone) : p.quote || last;
+    const description =
+      seen || speaker
+        ? escape(observation || 'The marks of use are easier to see up close.')
+        : 'There is more to this than its shape from a distance.';
     openDialog(
       html`<div class="eyebrow">${escape(sceneOf(state).name.toUpperCase())}</div>
         <h2>${escape(p.name)}</h2>
         <p>${description}</p>
         <div class="dialog-actions"></div>`,
+      true,
     );
-    if (!seen) {
+    if (!seen && !speaker) {
       actionButton(
         'Look more closely',
         () => {
@@ -164,23 +178,15 @@ export function createDialogs({
         closeDialog();
       });
     if (id === 'npc') {
-      actionButton(
-        'Listen to what they notice',
-        () => {
-          perform('talk');
-          closeDialog();
-          say(residentVoice(state, state.zone));
-        },
-        true,
-      );
       if (state.zone === 'lantern' && !state.life.promised)
         actionButton('Ask about the wrapped object', () => {
           openDialog(
-            html`<div class="eyebrow">MARA</div>
+            html`<h2>Mara</h2>
               <div class="quote">
                 “A fuse. Edda’s been waiting for it. I haven’t made it across yet.”
               </div>
               <div class="dialog-actions"></div>`,
+            true,
           );
           actionButton('Offer to take it along', () => tryAction('accept-parcel'), true);
           actionButton('Another time', closeDialog);
@@ -239,6 +245,7 @@ export function createDialogs({
           /><output id="vent-value">${state.life.vent}</output></label
         >
         <div class="dialog-actions"></div>`,
+      true,
     );
     const paint = () => {
       const value = state.life.pressure;
@@ -426,34 +433,32 @@ export function createDialogs({
   }
 
   function helpView() {
-    const state = getState();
     openDialog(
-      html`<div class="eyebrow">WELCOME TO GUTTERLIGHT</div>
-        <h2>A little life. A big world.</h2>
+      html`<div class="eyebrow">GUTTERLIGHT</div>
+        <h2>Settings and controls</h2>
         <p>
-          Explore a handmade industrial district as Iona, or choose <strong>Watch Iona</strong> and
-          follow her curiosity. Walk off the end of an open street to enter the next neighborhood.
-          Alleys branch, loop back, or end at walls. Machines have habits. People notice things. Let
-          Iona look, listen, and try what she learns. Press M to see the streets you have
-          discovered. Your discoveries and shortcut persist between visits.
-        </p>
-        <p>
-          <strong>WASD / arrow keys</strong> · move<br /><strong>Click / tap the ground</strong> ·
-          walk there<br /><strong>E</strong> · interact nearby<br /><strong>J / B / M / G</strong> ·
-          journal / satchel / map / gift<br /><strong>Escape</strong> · close a panel
+          <strong>WASD / arrow keys</strong> to walk. Hold <strong>Shift</strong> to move faster.
+          Click or tap the street to walk there. Use <strong>E</strong> or tap the prompt to talk or
+          inspect. Follow an open passage to enter the next neighborhood.
         </p>
         <p class="detail">
-          Playable prototype. Iona is a fictional autonomous character using a local symbolic
-          planner, remembered observations, and composable skill rules in this build; live AI is not
-          connected. Concerns mature over real hours and days, including between visits. Iona acts
-          while this page is visible; no conversations or accomplishments are invented while it is
-          closed. Memories, relationships, and evolving preferences are stored on this device. This
-          is not a server-running life or a live language-model character. The observer reports
-          committed events.
+          J journal · B satchel · M map · G gift · Esc close. Progress is saved in this browser.
         </p>
         <div class="dialog-actions"></div>`,
     );
     actionButton('Return to the lanes', closeDialog, true);
+    const watching = getMode() === 'watch';
+    actionButton(watching ? 'Take control' : 'Watch Iona', () => {
+      setMode(watching ? 'explore' : 'watch');
+      closeDialog();
+    });
+    const soundLabel = () => (isSoundOn() ? 'Mute ambient sound' : 'Enable ambient sound');
+    const sound = actionButton(soundLabel(), async () => {
+      await toggleSound();
+      sound.textContent = soundLabel();
+    });
+    actionButton('Open satchel', bagView);
+    actionButton('Leave a gift', giftView);
     actionButton('Start a fresh world', () => {
       openDialog(
         html`<div class="eyebrow">START AGAIN</div>

@@ -128,13 +128,6 @@ export function drawLivingWorld(c, s, images, time, reduced) {
         c.globalAlpha = 1;
       }
     }
-    if (p.kind === 'workbench') {
-      c.fillStyle = '#493c2a';
-      c.fillRect(p.x - 31, p.y - 24, 62, 20);
-      c.strokeStyle = '#b69a60';
-      c.strokeRect(p.x - 31, p.y - 24, 62, 20);
-      wheel(c, p.x + 12, p.y - 18, 9, 0);
-    }
     if (p.kind === 'lamp') {
       c.fillStyle = '#3b3e2b';
       c.fillRect(p.x - 4, p.y - 82, 8, 81);

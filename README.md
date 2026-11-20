@@ -20,9 +20,11 @@ Open **http://localhost:3000**. To use another port: `PORT=8080 npm start`.
 
 ## Play
 
-- **Watch Iona** lets her choose where to go and what to try.
-- **WASD / arrow keys** or **click / tap** moves her directly; **Shift** moves faster.
-- **E** interacts; **J** opens the journal; **B** the satchel; **M** the map; **G** visitor gifts.
+- **WASD / arrow keys** or **click / tap** moves Iona. Hold **Shift** to walk faster.
+- Approach a person or prop and press **E**, or click it to walk over and interact.
+- Select the objective at the upper left to follow it. The round minimap shows Iona’s position, passages, and the current objective. Click it or press **M** for the district map.
+- Select Iona’s portrait or press **J** for her journal. Press **B** for the satchel or **G** for visitor gifts.
+- Choose **Watch Iona** in Settings to let her choose where to go and what to try.
 - **Journal → Becoming** shows ongoing concerns, relationships, evidence behind beliefs, unfinished work, and playable sound sketches.
 - Walking off an open street leads to another neighborhood. The streets themselves form a maze of branches, loops, shortcuts, and dead ends.
 

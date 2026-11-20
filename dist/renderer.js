@@ -1,5 +1,4 @@
-import { W, H, activePlaces } from './world-model.js';
-import { locals } from './city.js';
+import { W, H } from './world-model.js';
 import { drawLivingWorld, drawActionEffects } from './living-world.js';
 
 // Rendering reads a frame snapshot. It does not mutate the world or query the DOM.
@@ -10,7 +9,9 @@ export function drawWorld(
     images,
     time: t,
     camera,
-    nearby,
+    points,
+    target,
+    promptId,
     hovered,
     effects,
     reduced,
@@ -27,8 +28,6 @@ export function drawWorld(
   ctx.translate(ox, oy);
   ctx.scale(scale, scale);
   drawAtmosphere(ctx, state, images, t, reduced);
-  drawInteractionMarkers(ctx, state, nearby, hovered);
-  ctx.globalAlpha = 1;
   drawLivingWorld(ctx, state, images, t, reduced);
   drawActionEffects(ctx, effects, t);
   if (state.zone === 'district' && state.gift) {
@@ -53,9 +52,17 @@ export function drawWorld(
     ctx.ellipse(focusRing.x, focusRing.y, 15, 7, 0, 0, Math.PI * 2);
     ctx.stroke();
   }
-  drawResident(ctx, state, images, t, reduced, state.y, false);
+  const residents = Object.values(points).filter((place) => place.speaker !== undefined);
+  if (state.zone === 'district') residents.push(...foundryPassersby);
+  residents.sort((a, b) => a.y - b.y);
+  const residentTime = reduced ? 0 : t;
+  for (const resident of residents) {
+    if (resident.y <= state.y) drawResident(ctx, images.residents, resident, residentTime);
+  }
   drawPlayer(ctx, state, images, dir, moving, frame);
-  drawResident(ctx, state, images, t, reduced, state.y, true);
+  for (const resident of residents) {
+    if (resident.y > state.y) drawResident(ctx, images.residents, resident, residentTime);
+  }
   if (state.zone === 'district' && state.stage >= 3) {
     ctx.strokeStyle = '#afd6b4aa';
     ctx.lineWidth = 2;
@@ -63,6 +70,7 @@ export function drawWorld(
     ctx.ellipse(1413, 544, 12 + Math.sin(t * 3) * 3, 4, 0, 0, Math.PI * 2);
     ctx.stroke();
   }
+  drawInteractionMarkers(ctx, points, target, promptId, hovered, scale);
   ctx.restore();
 }
 
@@ -74,26 +82,29 @@ function glow(ctx, x, y, r, color) {
   ctx.fillRect(x - r, y - r, r * 2, r * 2);
 }
 
-function drawResident(ctx, state, images, t, reduced, playerY, front) {
-  const p = locals[state.zone]?.npc;
-  if (!p || p.y > playerY !== front) return;
-  const im = images.residents;
-  const frames = [
-    [120, 10, 299, 732],
-    [611, 23, 272, 719],
-    [142, 772, 282, 753],
-    [588, 769, 334, 754],
-  ];
-  const [x, y, w, h] = frames[p.npc],
-    dh = 102,
-    dw = (w / h) * dh;
-  const sway = reduced ? 0 : Math.sin(t * 0.45 + p.npc) * 7,
-    bob = reduced ? 0 : Math.sin(t * 1.5 + p.npc) * 1.3;
-  ctx.fillStyle = '#07120b75';
+const residentFrames = [
+  [120, 10, 299, 732],
+  [611, 23, 272, 719],
+  [142, 772, 282, 753],
+  [588, 769, 334, 754],
+];
+const foundryPassersby = [
+  { x: 635, y: 444, speaker: 3 },
+  { x: 1038, y: 422, speaker: 0 },
+  { x: 423, y: 570, speaker: 1 },
+];
+
+function drawResident(ctx, image, place, time) {
+  const { x, y, speaker } = place;
+  const [sx, sy, sw, sh] = residentFrames[speaker];
+  const height = 107;
+  const width = (sw / sh) * height;
+  const sway = Math.sin(time * 1.5 + speaker) * 1.2;
+  ctx.fillStyle = '#0e0a087d';
   ctx.beginPath();
-  ctx.ellipse(p.x, p.y, 20, 7, 0, 0, Math.PI * 2);
+  ctx.ellipse(x, y, 21, 7, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.drawImage(im, x, y, w, h, p.x - dw / 2 + sway, p.y - dh + bob, dw, dh);
+  ctx.drawImage(image, sx, sy, sw, sh, x - width / 2 + sway, y - height, width, height);
 }
 
 function drawPlayer(ctx, state, images, dir, moving, frame) {
@@ -102,11 +113,14 @@ function drawPlayer(ctx, state, images, dir, moving, frame) {
   ctx.beginPath();
   ctx.ellipse(state.x, state.y + 1, 18, 7, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = '#c6da97a8';
-  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = '#fff1b9';
+  ctx.lineWidth = 1.7;
+  ctx.shadowColor = '#e5be67';
+  ctx.shadowBlur = 6;
   ctx.beginPath();
   ctx.ellipse(state.x, state.y + 1, 22, 9, 0, 0, Math.PI * 2);
   ctx.stroke();
+  ctx.shadowBlur = 0;
   const frames = [
     [
       [123, 6, 132, 297],
@@ -134,47 +148,60 @@ function drawPlayer(ctx, state, images, dir, moving, frame) {
     ],
   ];
   const [sx, sy, sw, sh] = frames[dir][moving ? frame : 0];
-  const dh = 92,
+  const dh = 112,
     dw = (sw / sh) * dh;
   ctx.drawImage(images.iona, sx, sy, sw, sh, state.x - dw / 2, state.y - dh, dw, dh);
 }
 
-function drawInteractionMarkers(ctx, state, nearby, hovered) {
-  for (const [id, p] of Object.entries(activePlaces(state))) {
-    const close = nearby === id || hovered === id,
-      active = close;
-    const distance = Math.hypot(state.x - p.x, state.y - p.y);
-    if (!p.exit && distance > 235 && hovered !== id) continue;
-    const y = p.y - 53;
-    ctx.globalAlpha = active ? 1 : 0.7;
-    ctx.fillStyle = active ? '#1c291bdb' : '#14221cd9';
-    ctx.strokeStyle = active ? '#d7cb8b' : '#a8b799';
-    ctx.lineWidth = 1;
+function drawInteractionMarkers(ctx, points, target, promptId, hovered, scale) {
+  for (const [id, place] of Object.entries(points)) {
+    if (id === promptId) continue;
+    const quest = id === target;
+    const speaker = place.speaker !== undefined;
+    const underPointer = id === hovered;
+    if (!quest && !underPointer && !speaker) continue;
+
+    ctx.save();
+    ctx.translate(place.x, place.y - (speaker ? 124 : 56));
+    const markerScale = Math.max(1, 0.75 / scale);
+    ctx.scale(markerScale, markerScale);
+    ctx.fillStyle = '#211a14';
+    ctx.strokeStyle = quest ? '#f7c85f' : '#e1bd87';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#000a';
+    ctx.shadowBlur = 4;
     ctx.beginPath();
-    ctx.moveTo(p.x, y - 12);
-    ctx.lineTo(p.x + 12, y);
-    ctx.lineTo(p.x, y + 12);
-    ctx.lineTo(p.x - 12, y);
-    ctx.closePath();
+    if (quest || place.exit) {
+      ctx.moveTo(0, -14);
+      ctx.lineTo(14, 0);
+      ctx.lineTo(0, 14);
+      ctx.lineTo(-14, 0);
+      ctx.closePath();
+    } else if (speaker) {
+      ctx.moveTo(-4, 10);
+      ctx.lineTo(-11, 10);
+      ctx.quadraticCurveTo(-16, 10, -16, 5);
+      ctx.lineTo(-16, -6);
+      ctx.quadraticCurveTo(-16, -11, -11, -11);
+      ctx.lineTo(11, -11);
+      ctx.quadraticCurveTo(16, -11, 16, -6);
+      ctx.lineTo(16, 5);
+      ctx.quadraticCurveTo(16, 10, 11, 10);
+      ctx.lineTo(5, 10);
+      ctx.lineTo(0, 16);
+      ctx.closePath();
+    } else {
+      ctx.roundRect(-11, -11, 22, 22, 4);
+    }
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = active ? '#eddb91' : '#cbd6b5';
-    ctx.font = '15px Georgia';
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = quest ? '#ffce67' : '#f2d3a1';
+    ctx.font = 'bold 17px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(p.exit ? (p.locked ? '×' : '◇') : '·', p.x, y + 1);
-    if (close || p.exit) {
-      ctx.font = '12px "DM Sans",sans-serif';
-      ctx.fillStyle = '#f3e7bf';
-      ctx.shadowColor = '#000';
-      ctx.shadowBlur = 5;
-      ctx.fillText(
-        p.exit ? p.dir.toUpperCase() + ' · ' + p.name : p.name,
-        Math.max(150, Math.min(W - 150, p.x)),
-        y - 25,
-      );
-      ctx.shadowBlur = 0;
-    }
+    ctx.fillText(quest ? '!' : speaker ? '…' : place.locked ? '×' : 'E', 0, 1);
+    ctx.restore();
   }
 }
 

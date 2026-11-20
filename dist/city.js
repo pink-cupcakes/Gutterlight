@@ -309,7 +309,7 @@ export const locals = {
       y: 545,
       name: 'Orin · pipewatcher',
       verb: 'Talk to Orin',
-      npc: 0,
+      speaker: 0,
       quote:
         'A pipe under strain has a different note. Close your eyes a moment. You can hear which one is working too hard.',
     },
@@ -320,7 +320,7 @@ export const locals = {
       y: 650,
       name: 'Mara · courier',
       verb: 'Talk to Mara',
-      npc: 1,
+      speaker: 1,
       quote:
         'I keep meaning to cross over. Then another delivery comes in, and this little parcel stays in my pocket.',
     },
@@ -331,7 +331,7 @@ export const locals = {
       y: 600,
       name: 'Ves · scrap broker',
       verb: 'Talk to Ves',
-      npc: 2,
+      speaker: 2,
       quote:
         'People throw away things when their shape stops making sense. The copper does not care what it used to be.',
     },
@@ -342,7 +342,7 @@ export const locals = {
       y: 550,
       name: 'Edda · cable keeper',
       verb: 'Talk to Edda',
-      npc: 3,
+      speaker: 3,
       quote:
         'The carriages used to follow a green signal. Haven’t seen one in a while. I still check the empty lamp, out of habit.',
     },
@@ -385,7 +385,20 @@ function navigation(zone) {
   navGrids.set(zone, value);
   return value;
 }
+function walkableSegment(state, x, y) {
+  const dx = x - state.x;
+  const dy = y - state.y;
+  const steps = Math.ceil(Math.hypot(dx, dy) / 3);
+  for (let i = 1; i < steps; i++) {
+    if (!sceneWalkable(state.zone, state.x + (dx * i) / steps, state.y + (dy * i) / steps)) {
+      return false;
+    }
+  }
+  return true;
+}
 export function streetRoute(s, x, y) {
+  if (sceneWalkable(s.zone, x, y) && walkableSegment(s, x, y)) return [{ x, y }];
+
   const { nodes, grid } = navigation(s.zone);
   const closest = (x, y) =>
     nodes.reduce((a, b) =>
@@ -424,14 +437,14 @@ export function streetRoute(s, x, y) {
   return [];
 }
 export function cityObjective(s) {
+  const openPassages = Object.entries(exits(s)).filter(([, passage]) => !passage.locked);
   if (!s.city.recovered)
     return {
       title: 'Streets within streets',
       text: `${s.city.visited.length} of ${Object.keys(scenes).length} neighborhoods explored. Follow the passages, meet the locals, and find what the city has left behind.`,
       step: 'Explore the routes from here',
-      target:
-        Object.keys(exits(s)).find((id) => !s.city.visited.includes(exits(s)[id].to)) ||
-        Object.keys(exits(s))[0],
+      target: (openPassages.find(([, passage]) => !s.city.visited.includes(passage.to)) ||
+        openPassages[0])?.[0],
     };
   return {
     title: 'A city taking shape',
@@ -439,7 +452,7 @@ export function cityObjective(s) {
       ? 'A coil recovered, a shortcut opened. These streets are beginning to feel familiar.'
       : 'The coil has a second chance. There may still be a shorter way between these streets.',
     step: 'Keep exploring the undercity',
-    target: Object.keys(exits(s))[0],
+    target: openPassages[0]?.[0],
   };
 }
 
