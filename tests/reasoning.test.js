@@ -1,14 +1,116 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {initialState,commit,activePlaces,loadState} from '../dist/world-model.js';
-import {safePosition} from '../dist/city.js';
-import {perceive,pressure} from '../dist/interactions.js';
-import {decide,findPlan,pressureExperiment} from '../dist/mind.js';
-const visit=(s,zone,id)=>{s.zone=zone;Object.assign(s,safePosition(zone));perceive(s,activePlaces(s));Object.assign(s,activePlaces(s)[id]);};
-const study=(s,zone,id)=>{visit(s,zone,id);commit(s,'study',{id});};
-test('the planner starts with local evidence and cannot plan an unseen beacon repair',()=>{const s=initialState();perceive(s,activePlaces(s));assert.deepEqual(Object.keys(s.mind.routes),['district']);assert.ok(Object.values(s.mind.known).every(o=>o.zone==='district'));assert.equal(findPlan(s,a=>a.beacon),null);const decision=decide(s,activePlaces(s));assert.equal(decision.type,'study');assert.ok(activePlaces(s)[decision.id]);});
-test('salvaging and mechanics combine into wiring; materials cannot be duplicated',()=>{const s=initialState();study(s,'district','scrap');assert.ok(commit(s,'rummage'));assert.equal(commit(s,'rummage'),null);assert.equal(s.life.scrap,2);study(s,'district','benchwork');assert.equal(commit(s,'wind-wire'),null);visit(s,'district','pump');commit(s,'inspect');visit(s,'district','benchwork');assert.ok(commit(s,'wind-wire'));assert.equal(s.life.scrap,0);assert.equal(s.life.wire,2);assert.ok(s.life.skills.includes('Wiring'));assert.equal(commit(s,'wind-wire'),null);study(s,'lantern','lamp');assert.ok(commit(s,'light-lamp'));assert.equal(s.life.wire,1);assert.equal(commit(s,'light-lamp'),null);assert.equal(s.life.wire,1);});
-test('regulator experiments learn from readings and require combined skills to settle',()=>{const s=initialState();study(s,'boiler','regulator');assert.equal(commit(s,'settle-pressure'),null);assert.equal(commit(s,'probe',{intake:99,vent:0}),null);let attempts=0;while(!(s.life.pressure>=55&&s.life.pressure<=60)&&attempts++<49){const trial=pressureExperiment(s);assert.ok(commit(s,trial.type,trial.payload));}assert.ok(attempts<12);assert.equal(s.life.pressure,pressure(s.life.intake,s.life.vent));assert.equal(commit(s,'settle-pressure'),null);visit(s,'district','pump');commit(s,'inspect');visit(s,'crossing','npc');commit(s,'talk');visit(s,'boiler','regulator');assert.ok(commit(s,'settle-pressure'));assert.equal(commit(s,'settle-pressure'),null);assert.ok(s.life.stable);});
-test('beacon restoration consumes a coil and wire and requires stable power and three skills',()=>{const s=initialState();study(s,'cable','beacon');assert.equal(commit(s,'restore-beacon'),null);s.city.recovered=true;s.life.wire=1;s.life.skills.push('Mechanics','Wiring','Resonance');assert.equal(commit(s,'restore-beacon'),null);s.life.stable=true;assert.ok(commit(s,'restore-beacon'));assert.equal(s.life.wire,0);assert.equal(s.life.coilUsed,true);assert.equal(commit(s,'restore-beacon'),null);const reloaded=loadState(JSON.stringify(s));assert.equal(reloaded.life.beacon,true);assert.equal(reloaded.life.coilUsed,true);assert.deepEqual(reloaded.mind.studied,s.mind.studied);});
-test('a promise can only be fulfilled near the intended recipient and rewards once',()=>{const s=initialState();visit(s,'lantern','npc');assert.ok(commit(s,'accept-parcel'));assert.equal(commit(s,'accept-parcel'),null);assert.equal(commit(s,'deliver-parcel'),null);visit(s,'cable','npc');assert.ok(commit(s,'deliver-parcel'));assert.equal(s.life.scrap,2);assert.equal(s.life.parcel,false);assert.equal(commit(s,'deliver-parcel'),null);});
-test('forward search composes known scavenging, crafting and repair affordances',()=>{const s=initialState();study(s,'district','scrap');study(s,'district','benchwork');visit(s,'district','pump');commit(s,'inspect');study(s,'lantern','lamp');const plan=findPlan(s,a=>a.lamp);assert.deepEqual(plan.map(a=>a.type),['rummage','wind-wire','light-lamp']);});
+import { initialState, commit, activePlaces, loadState } from '../dist/world-model.js';
+import { safePosition } from '../dist/city.js';
+import { perceive, pressure } from '../dist/interactions.js';
+import { decide, findPlan, pressureExperiment } from '../dist/mind.js';
+const visit = (s, zone, id) => {
+  s.zone = zone;
+  Object.assign(s, safePosition(zone));
+  perceive(s, activePlaces(s));
+  Object.assign(s, activePlaces(s)[id]);
+};
+const study = (s, zone, id) => {
+  visit(s, zone, id);
+  commit(s, 'study', { id });
+};
+test('the planner starts with local evidence and cannot plan an unseen beacon repair', () => {
+  const s = initialState();
+  perceive(s, activePlaces(s));
+  assert.deepEqual(Object.keys(s.mind.routes), ['district']);
+  assert.ok(Object.values(s.mind.known).every((o) => o.zone === 'district'));
+  assert.equal(
+    findPlan(s, (a) => a.beacon),
+    null,
+  );
+  const decision = decide(s, activePlaces(s));
+  assert.equal(decision.type, 'study');
+  assert.ok(activePlaces(s)[decision.id]);
+});
+test('salvaging and mechanics combine into wiring; materials cannot be duplicated', () => {
+  const s = initialState();
+  study(s, 'district', 'scrap');
+  assert.ok(commit(s, 'rummage'));
+  assert.equal(commit(s, 'rummage'), null);
+  assert.equal(s.life.scrap, 2);
+  study(s, 'district', 'benchwork');
+  assert.equal(commit(s, 'wind-wire'), null);
+  visit(s, 'district', 'pump');
+  commit(s, 'inspect');
+  visit(s, 'district', 'benchwork');
+  assert.ok(commit(s, 'wind-wire'));
+  assert.equal(s.life.scrap, 0);
+  assert.equal(s.life.wire, 2);
+  assert.ok(s.life.skills.includes('Wiring'));
+  assert.equal(commit(s, 'wind-wire'), null);
+  study(s, 'lantern', 'lamp');
+  assert.ok(commit(s, 'light-lamp'));
+  assert.equal(s.life.wire, 1);
+  assert.equal(commit(s, 'light-lamp'), null);
+  assert.equal(s.life.wire, 1);
+});
+test('regulator experiments learn from readings and require combined skills to settle', () => {
+  const s = initialState();
+  study(s, 'boiler', 'regulator');
+  assert.equal(commit(s, 'settle-pressure'), null);
+  assert.equal(commit(s, 'probe', { intake: 99, vent: 0 }), null);
+  let attempts = 0;
+  while (!(s.life.pressure >= 55 && s.life.pressure <= 60) && attempts++ < 49) {
+    const trial = pressureExperiment(s);
+    assert.ok(commit(s, trial.type, trial.payload));
+  }
+  assert.ok(attempts < 12);
+  assert.equal(s.life.pressure, pressure(s.life.intake, s.life.vent));
+  assert.equal(commit(s, 'settle-pressure'), null);
+  visit(s, 'district', 'pump');
+  commit(s, 'inspect');
+  visit(s, 'crossing', 'npc');
+  commit(s, 'talk');
+  visit(s, 'boiler', 'regulator');
+  assert.ok(commit(s, 'settle-pressure'));
+  assert.equal(commit(s, 'settle-pressure'), null);
+  assert.ok(s.life.stable);
+});
+test('beacon restoration consumes a coil and wire and requires stable power and three skills', () => {
+  const s = initialState();
+  study(s, 'cable', 'beacon');
+  assert.equal(commit(s, 'restore-beacon'), null);
+  s.city.recovered = true;
+  s.life.wire = 1;
+  s.life.skills.push('Mechanics', 'Wiring', 'Resonance');
+  assert.equal(commit(s, 'restore-beacon'), null);
+  s.life.stable = true;
+  assert.ok(commit(s, 'restore-beacon'));
+  assert.equal(s.life.wire, 0);
+  assert.equal(s.life.coilUsed, true);
+  assert.equal(commit(s, 'restore-beacon'), null);
+  const reloaded = loadState(JSON.stringify(s));
+  assert.equal(reloaded.life.beacon, true);
+  assert.equal(reloaded.life.coilUsed, true);
+  assert.deepEqual(reloaded.mind.studied, s.mind.studied);
+});
+test('a promise can only be fulfilled near the intended recipient and rewards once', () => {
+  const s = initialState();
+  visit(s, 'lantern', 'npc');
+  assert.ok(commit(s, 'accept-parcel'));
+  assert.equal(commit(s, 'accept-parcel'), null);
+  assert.equal(commit(s, 'deliver-parcel'), null);
+  visit(s, 'cable', 'npc');
+  assert.ok(commit(s, 'deliver-parcel'));
+  assert.equal(s.life.scrap, 2);
+  assert.equal(s.life.parcel, false);
+  assert.equal(commit(s, 'deliver-parcel'), null);
+});
+test('forward search composes known scavenging, crafting and repair affordances', () => {
+  const s = initialState();
+  study(s, 'district', 'scrap');
+  study(s, 'district', 'benchwork');
+  visit(s, 'district', 'pump');
+  commit(s, 'inspect');
+  study(s, 'lantern', 'lamp');
+  const plan = findPlan(s, (a) => a.lamp);
+  assert.deepEqual(
+    plan.map((a) => a.type),
+    ['rummage', 'wind-wire', 'light-lamp'],
+  );
+});

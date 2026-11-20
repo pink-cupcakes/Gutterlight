@@ -1,18 +1,212 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {initialState,commit,loadState,activePlaces} from '../dist/world-model.js';
-import {perceive} from '../dist/interactions.js';
-import {decide} from '../dist/mind.js';
-import {ensureContinuity,advanceContinuity,continuityOptions,leaveThought} from '../dist/continuity.js';
-function visit(s,zone,id){s.zone=zone;perceive(s,activePlaces(s));Object.assign(s,{x:activePlaces(s)[id].x,y:activePlaces(s)[id].y});}
-function pass(s,seconds){s.continuity.age+=seconds;s.elapsed+=seconds;}
-function repaired(){const s=initialState();s.stage=5;s.life.lamp=true;s.life.beacon=true;s.life.stable=true;s.life.skills=['Notice','Mechanics','Wiring','Listening','Resonance'];s.city.recovered=true;ensureContinuity(s);return s;}
-test('repair concerns unfold over hours, never reset repairs, and are guarded by proximity and time',()=>{const s=repaired();visit(s,'district','pump');assert.equal(commit(s,'life-pump'),null);pass(s,181);assert.ok(commit(s,'life-pump'));assert.equal(commit(s,'life-pump'),null);pass(s,3600);visit(s,'district','bench');assert.equal(commit(s,'life-pump'),null);visit(s,'district','pump');const e=commit(s,'life-pump');assert.match(e.memory,/wanted to be needed/);assert.equal(s.stage,5);assert.equal(s.continuity.threads.pump.visits,2);assert.ok(s.continuity.threads.pump.due>s.continuity.age);});
-test('offline hours mature a concern without inventing actions or memories; reload is idempotent',()=>{const s=repaired(),c=s.continuity;const now=c.lastWall,events=s.events.length,memories=c.memories.length;advanceContinuity(s,0,now+48*3600000);assert.ok(c.age>=48*3600);assert.equal(s.events.length,events);assert.equal(c.memories.length,memories);assert.equal(c.threads.signal.phase,0);const loaded=loadState(JSON.stringify(s));advanceContinuity(loaded,0,now+48*3600000);assert.equal(loaded.continuity.age,c.age);advanceContinuity(loaded,0,now);assert.equal(loaded.continuity.age,c.age);});
-test('a failed first sketch needs feedback and time; work retains sources and is shared once per person',()=>{const s=repaired();visit(s,'district','pump');assert.ok(commit(s,'life-listen'));pass(s,601);visit(s,'boiler','regulator');assert.ok(commit(s,'life-listen'));visit(s,'district','benchwork');assert.ok(commit(s,'life-compose'));assert.equal(s.continuity.works.length,0);s.city.talked.push('violet');visit(s,'violet','npc');assert.equal(commit(s,'life-feedback'),null);pass(s,901);assert.ok(commit(s,'life-feedback'));visit(s,'district','benchwork');assert.equal(commit(s,'life-compose'),null);pass(s,1801);assert.ok(commit(s,'life-compose'));assert.equal(s.continuity.works.length,1);const w=s.continuity.works[0];assert.equal(w.feedback,'Ves');assert.equal(w.sources.length,2);visit(s,'violet','npc');assert.ok(commit(s,'life-share'));assert.equal(commit(s,'life-share'),null);assert.deepEqual(w.shared,['violet']);const loaded=loadState(JSON.stringify(s));assert.deepEqual(loaded.continuity.works,s.continuity.works);assert.deepEqual(loaded.continuity.relationships,s.continuity.relationships);});
-test('reflection revises beliefs from multiple memories, with evidence and slow trait changes',()=>{const s=repaired();visit(s,'district','pump');pass(s,181);commit(s,'life-pump');pass(s,3601);commit(s,'life-pump');visit(s,'district','bench');const before=s.continuity.traits.independence;assert.ok(commit(s,'life-reflect'));const b=s.continuity.beliefs.find(b=>b.key==='control');assert.ok(b);assert.ok(b.evidence.length>=2);assert.ok(b.evidence.every(id=>s.continuity.memories.some(m=>m.id===id)));assert.ok(s.continuity.traits.independence<before);assert.ok(before-s.continuity.traits.independence<.05);assert.equal(commit(s,'life-reflect'),null);const loaded=loadState(JSON.stringify(s));assert.deepEqual(loaded.continuity.beliefs,s.continuity.beliefs);});
-test('visitor thoughts are bounded, read in the world, and influence preferences only when noticed',()=>{const s=initialState();const before=s.continuity.traits.care;assert.equal(leaveThought(s,'care'),true);assert.equal(leaveThought(s,'curiosity'),false);assert.equal(s.continuity.traits.care,before);visit(s,'district','pump');assert.equal(commit(s,'life-note'),null);visit(s,'district','bench');assert.ok(commit(s,'life-note'));assert.ok(s.continuity.traits.care>before);assert.equal(commit(s,'life-note'),null);assert.equal(leaveThought(s,'curiosity'),false);pass(s,1801);assert.equal(leaveThought(s,'curiosity'),true);});
-test('lamp consequences change the actual world and require separate visits over a day',()=>{const s=repaired();pass(s,601);visit(s,'lantern','npc');assert.ok(commit(s,'life-lamp'));pass(s,121);visit(s,'district','benchwork');assert.ok(commit(s,'life-lamp'));visit(s,'lantern','lamp');assert.equal(commit(s,'life-lamp'),null);pass(s,3601);assert.ok(commit(s,'life-lamp'));assert.equal(s.continuity.threads.lamp.phase,3);visit(s,'lantern','npc');assert.equal(commit(s,'life-lamp'),null);pass(s,86401);assert.ok(commit(s,'life-lamp'));assert.equal(s.continuity.threads.lamp.visits,1);assert.equal(s.life.lamp,true);});
-test('old saves gain continuity without replaying rewards or deleting memories',()=>{const s=initialState();s.stage=5;s.life.beacon=true;delete s.continuity;const restored=loadState(JSON.stringify(s));assert.equal(restored.stage,5);assert.equal(restored.life.beacon,true);assert.equal(restored.events.length,s.events.length);assert.equal(restored.continuity.memories.length,1);assert.equal(restored.continuity.threads.signal.phase,0);});
-test('new experience changes action preferences while unfamiliar places remain unavailable',()=>{const s=repaired();pass(s,700);visit(s,'district','pump');visit(s,'lantern','npc');s.continuity.traits.care=.9;s.continuity.traits.curiosity=.2;const options=continuityOptions(s);assert.ok(options.some(o=>o.type==='life-lamp'));assert.ok(!options.some(o=>o.type==='life-signal'));s.continuity.threads.lamp.due=999999;const d=decide(s,activePlaces(s));assert.ok(d);assert.notEqual(d.type,'rest');});
-test('several days of autonomous choices carry work and relationships beyond the original quest',()=>{const s=initialState();s.continuity.seed=42;const actionCounts={};for(let i=0;i<9000;i++){perceive(s,activePlaces(s));const d=decide(s,activePlaces(s));if(d&&d.type!=='pause'){const p=activePlaces(s)[d.id];assert.ok(p,`physical target exists for ${d.type}`);s.x=p.x;s.y=p.y;const e=commit(s,d.type,d.payload||{});if(e)actionCounts[d.type]=(actionCounts[d.type]||0)+1;}pass(s,30);}assert.equal(s.stage,5);assert.equal(s.life.beacon,true);assert.ok(s.continuity.works.length>=2,'revisits produce further creative work');assert.ok(s.continuity.threads.signal.phase>=4,'belief about the echo meets contrary evidence');assert.ok(s.continuity.threads.lamp.phase>=3);assert.ok(s.continuity.threads.parcel.visits>=1);assert.ok(s.continuity.beliefs.length>=2);assert.ok(s.continuity.relationships.violet.trust>.1);assert.ok(actionCounts['life-reflect']>=2);assert.ok(s.continuity.memories.length<=80);assert.ok(s.continuity.works.every(w=>w.notes.length>=2));assert.ok((actionCounts.rest||0)<3,'no endless terminal rest loop');});
+import { initialState, commit, loadState, activePlaces } from '../dist/world-model.js';
+import { perceive } from '../dist/interactions.js';
+import { decide } from '../dist/mind.js';
+import {
+  ensureContinuity,
+  advanceContinuity,
+  continuityOptions,
+  leaveThought,
+} from '../dist/continuity.js';
+function visit(s, zone, id) {
+  s.zone = zone;
+  perceive(s, activePlaces(s));
+  Object.assign(s, { x: activePlaces(s)[id].x, y: activePlaces(s)[id].y });
+}
+function pass(s, seconds) {
+  s.continuity.age += seconds;
+  s.elapsed += seconds;
+}
+function repaired() {
+  const s = initialState();
+  s.stage = 5;
+  s.life.lamp = true;
+  s.life.beacon = true;
+  s.life.stable = true;
+  s.life.skills = ['Notice', 'Mechanics', 'Wiring', 'Listening', 'Resonance'];
+  s.city.recovered = true;
+  ensureContinuity(s);
+  return s;
+}
+test('repair concerns unfold over hours, never reset repairs, and are guarded by proximity and time', () => {
+  const s = repaired();
+  visit(s, 'district', 'pump');
+  assert.equal(commit(s, 'life-pump'), null);
+  pass(s, 181);
+  assert.ok(commit(s, 'life-pump'));
+  assert.equal(commit(s, 'life-pump'), null);
+  pass(s, 3600);
+  visit(s, 'district', 'bench');
+  assert.equal(commit(s, 'life-pump'), null);
+  visit(s, 'district', 'pump');
+  const e = commit(s, 'life-pump');
+  assert.match(e.memory, /wanted to be needed/);
+  assert.equal(s.stage, 5);
+  assert.equal(s.continuity.threads.pump.visits, 2);
+  assert.ok(s.continuity.threads.pump.due > s.continuity.age);
+});
+test('offline hours mature a concern without inventing actions or memories; reload is idempotent', () => {
+  const s = repaired(),
+    c = s.continuity;
+  const now = c.lastWall,
+    events = s.events.length,
+    memories = c.memories.length;
+  advanceContinuity(s, 0, now + 48 * 3600000);
+  assert.ok(c.age >= 48 * 3600);
+  assert.equal(s.events.length, events);
+  assert.equal(c.memories.length, memories);
+  assert.equal(c.threads.signal.phase, 0);
+  const loaded = loadState(JSON.stringify(s));
+  advanceContinuity(loaded, 0, now + 48 * 3600000);
+  assert.equal(loaded.continuity.age, c.age);
+  advanceContinuity(loaded, 0, now);
+  assert.equal(loaded.continuity.age, c.age);
+});
+test('a failed first sketch needs feedback and time; work retains sources and is shared once per person', () => {
+  const s = repaired();
+  visit(s, 'district', 'pump');
+  assert.ok(commit(s, 'life-listen'));
+  pass(s, 601);
+  visit(s, 'boiler', 'regulator');
+  assert.ok(commit(s, 'life-listen'));
+  visit(s, 'district', 'benchwork');
+  assert.ok(commit(s, 'life-compose'));
+  assert.equal(s.continuity.works.length, 0);
+  s.city.talked.push('violet');
+  visit(s, 'violet', 'npc');
+  assert.equal(commit(s, 'life-feedback'), null);
+  pass(s, 901);
+  assert.ok(commit(s, 'life-feedback'));
+  visit(s, 'district', 'benchwork');
+  assert.equal(commit(s, 'life-compose'), null);
+  pass(s, 1801);
+  assert.ok(commit(s, 'life-compose'));
+  assert.equal(s.continuity.works.length, 1);
+  const w = s.continuity.works[0];
+  assert.equal(w.feedback, 'Ves');
+  assert.equal(w.sources.length, 2);
+  visit(s, 'violet', 'npc');
+  assert.ok(commit(s, 'life-share'));
+  assert.equal(commit(s, 'life-share'), null);
+  assert.deepEqual(w.shared, ['violet']);
+  const loaded = loadState(JSON.stringify(s));
+  assert.deepEqual(loaded.continuity.works, s.continuity.works);
+  assert.deepEqual(loaded.continuity.relationships, s.continuity.relationships);
+});
+test('reflection revises beliefs from multiple memories, with evidence and slow trait changes', () => {
+  const s = repaired();
+  visit(s, 'district', 'pump');
+  pass(s, 181);
+  commit(s, 'life-pump');
+  pass(s, 3601);
+  commit(s, 'life-pump');
+  visit(s, 'district', 'bench');
+  const before = s.continuity.traits.independence;
+  assert.ok(commit(s, 'life-reflect'));
+  const b = s.continuity.beliefs.find((b) => b.key === 'control');
+  assert.ok(b);
+  assert.ok(b.evidence.length >= 2);
+  assert.ok(b.evidence.every((id) => s.continuity.memories.some((m) => m.id === id)));
+  assert.ok(s.continuity.traits.independence < before);
+  assert.ok(before - s.continuity.traits.independence < 0.05);
+  assert.equal(commit(s, 'life-reflect'), null);
+  const loaded = loadState(JSON.stringify(s));
+  assert.deepEqual(loaded.continuity.beliefs, s.continuity.beliefs);
+});
+test('visitor thoughts are bounded, read in the world, and influence preferences only when noticed', () => {
+  const s = initialState();
+  const before = s.continuity.traits.care;
+  assert.equal(leaveThought(s, 'care'), true);
+  assert.equal(leaveThought(s, 'curiosity'), false);
+  assert.equal(s.continuity.traits.care, before);
+  visit(s, 'district', 'pump');
+  assert.equal(commit(s, 'life-note'), null);
+  visit(s, 'district', 'bench');
+  assert.ok(commit(s, 'life-note'));
+  assert.ok(s.continuity.traits.care > before);
+  assert.equal(commit(s, 'life-note'), null);
+  assert.equal(leaveThought(s, 'curiosity'), false);
+  pass(s, 1801);
+  assert.equal(leaveThought(s, 'curiosity'), true);
+});
+test('lamp consequences change the actual world and require separate visits over a day', () => {
+  const s = repaired();
+  pass(s, 601);
+  visit(s, 'lantern', 'npc');
+  assert.ok(commit(s, 'life-lamp'));
+  pass(s, 121);
+  visit(s, 'district', 'benchwork');
+  assert.ok(commit(s, 'life-lamp'));
+  visit(s, 'lantern', 'lamp');
+  assert.equal(commit(s, 'life-lamp'), null);
+  pass(s, 3601);
+  assert.ok(commit(s, 'life-lamp'));
+  assert.equal(s.continuity.threads.lamp.phase, 3);
+  visit(s, 'lantern', 'npc');
+  assert.equal(commit(s, 'life-lamp'), null);
+  pass(s, 86401);
+  assert.ok(commit(s, 'life-lamp'));
+  assert.equal(s.continuity.threads.lamp.visits, 1);
+  assert.equal(s.life.lamp, true);
+});
+test('old saves gain continuity without replaying rewards or deleting memories', () => {
+  const s = initialState();
+  s.stage = 5;
+  s.life.beacon = true;
+  delete s.continuity;
+  const restored = loadState(JSON.stringify(s));
+  assert.equal(restored.stage, 5);
+  assert.equal(restored.life.beacon, true);
+  assert.equal(restored.events.length, s.events.length);
+  assert.equal(restored.continuity.memories.length, 1);
+  assert.equal(restored.continuity.threads.signal.phase, 0);
+});
+test('new experience changes action preferences while unfamiliar places remain unavailable', () => {
+  const s = repaired();
+  pass(s, 700);
+  visit(s, 'district', 'pump');
+  visit(s, 'lantern', 'npc');
+  s.continuity.traits.care = 0.9;
+  s.continuity.traits.curiosity = 0.2;
+  const options = continuityOptions(s);
+  assert.ok(options.some((o) => o.type === 'life-lamp'));
+  assert.ok(!options.some((o) => o.type === 'life-signal'));
+  s.continuity.threads.lamp.due = 999999;
+  const d = decide(s, activePlaces(s));
+  assert.ok(d);
+  assert.notEqual(d.type, 'rest');
+});
+test('several days of autonomous choices carry work and relationships beyond the original quest', () => {
+  const s = initialState();
+  s.continuity.seed = 42;
+  const actionCounts = {};
+  for (let i = 0; i < 9000; i++) {
+    perceive(s, activePlaces(s));
+    const d = decide(s, activePlaces(s));
+    if (d && d.type !== 'pause') {
+      const p = activePlaces(s)[d.id];
+      assert.ok(p, `physical target exists for ${d.type}`);
+      s.x = p.x;
+      s.y = p.y;
+      const e = commit(s, d.type, d.payload || {});
+      if (e) actionCounts[d.type] = (actionCounts[d.type] || 0) + 1;
+    }
+    pass(s, 30);
+  }
+  assert.equal(s.stage, 5);
+  assert.equal(s.life.beacon, true);
+  assert.ok(s.continuity.works.length >= 2, 'revisits produce further creative work');
+  assert.ok(
+    s.continuity.threads.signal.phase >= 4,
+    'belief about the echo meets contrary evidence',
+  );
+  assert.ok(s.continuity.threads.lamp.phase >= 3);
+  assert.ok(s.continuity.threads.parcel.visits >= 1);
+  assert.ok(s.continuity.beliefs.length >= 2);
+  assert.ok(s.continuity.relationships.violet.trust > 0.1);
+  assert.ok(actionCounts['life-reflect'] >= 2);
+  assert.ok(s.continuity.memories.length <= 80);
+  assert.ok(s.continuity.works.every((w) => w.notes.length >= 2));
+  assert.ok((actionCounts.rest || 0) < 3, 'no endless terminal rest loop');
+});

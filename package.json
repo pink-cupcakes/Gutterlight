@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "start": "node scripts/serve.js",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "description": "A painted 2D undercity with an autonomous character, remembered experiences and evolving relationships.",
   "engines": {
@@ -17,5 +19,8 @@
   },
   "bugs": {
     "url": "https://github.com/pink-cupcakes/Gutterlight/issues"
+  },
+  "devDependencies": {
+    "prettier": "3.10.1"
   }
 }
